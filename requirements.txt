@@ -1,0 +1,5 @@
+flask
+preston
+aiohttp
+sqlalchemy
+python-dotenv

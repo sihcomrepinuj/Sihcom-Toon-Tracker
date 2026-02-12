@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - EVE Character Tracker{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <div class="dashboard-header">
+        <div class="role-filters" id="roleFilters">
+            {% if roles %}
+                {% for role in roles %}
+                    <button class="role-chip filter-chip" data-role="{{ role.name }}">{{ role.name }}</button>
+                {% endfor %}
+            {% endif %}
+        </div>
+        <div class="refresh-indicator">
+            <span id="refreshTimer">Refreshing in 60s</span>
+        </div>
+    </div>
+
+    <div class="character-list" id="characterList">
+        {% if characters %}
+            {% for char in characters %}
+                <div class="character-card"
+                     data-online="{{ 'true' if char.location and char.location.is_online else 'false' }}"
+                     data-roles="{{ char.roles|map(attribute='name')|join(',') }}">
+                    <div class="character-portrait">
+                        <img src="https://images.evetech.net/characters/{{ char.id }}/portrait?size=64"
+                             alt="{{ char.name }}"
+                             class="portrait-img">
+                        <div class="status-indicator {{ 'online' if char.location and char.location.is_online else 'offline' }}"></div>
+                    </div>
+                    <div class="character-info">
+                        <h3 class="character-name">{{ char.name }}</h3>
+                        <div class="character-roles">
+                            {% for role in char.roles %}
+                                <span class="role-chip">{{ role.name }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="character-location">
+                        {% if char.location %}
+                            <a href="https://evemaps.dotlan.net/system/{{ char.location.solar_system_name }}"
+                               target="_blank"
+                               class="system-link">
+                                {{ char.location.solar_system_name }}
+                            </a>
+                        {% else %}
+                            <span class="unknown">Unknown</span>
+                        {% endif %}
+                    </div>
+                    <div class="character-ship">
+                        {% if char.location %}
+                            {{ char.location.ship_name }}
+                        {% else %}
+                            <span class="unknown">Unknown</span>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <p>No characters added yet.</p>
+                <p><a href="{{ url_for('settings') }}">Add a character</a> to get started.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let refreshCountdown = 60;
+    let activeRoles = new Set();
+
+    // Auto-refresh functionality
+    function updateCharacters() {
+        fetch('/api/locations')
+            .then(response => response.json())
+            .then(data => {
+                refreshCountdown = 60;
+                updateCharacterDisplay(data);
+            })
+            .catch(error => console.error('Error fetching locations:', error));
+    }
+
+    function updateCharacterDisplay(characters) {
+        const characterList = document.getElementById('characterList');
+
+        if (characters.length === 0) {
+            characterList.innerHTML = `
+                <div class="empty-state">
+                    <p>No characters added yet.</p>
+                    <p><a href="/settings">Add a character</a> to get started.</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Sort: online first, then alphabetical
+        characters.sort((a, b) => {
+            if (a.online !== b.online) return b.online - a.online;
+            return a.name.localeCompare(b.name);
+        });
+
+        characterList.innerHTML = characters.map(char => `
+            <div class="character-card"
+                 data-online="${char.online}"
+                 data-roles="${char.roles.join(',')}">
+                <div class="character-portrait">
+                    <img src="${char.portrait_url}" alt="${char.name}" class="portrait-img">
+                    <div class="status-indicator ${char.online ? 'online' : 'offline'}"></div>
+                </div>
+                <div class="character-info">
+                    <h3 class="character-name">${char.name}</h3>
+                    <div class="character-roles">
+                        ${char.roles.map(role => `<span class="role-chip">${role}</span>`).join('')}
+                    </div>
+                </div>
+                <div class="character-location">
+                    <a href="https://evemaps.dotlan.net/system/${char.system}"
+                       target="_blank"
+                       class="system-link">
+                        ${char.system}
+                    </a>
+                </div>
+                <div class="character-ship">
+                    ${char.ship}
+                </div>
+            </div>
+        `).join('');
+
+        applyRoleFilter();
+    }
+
+    function updateTimer() {
+        const timerElement = document.getElementById('refreshTimer');
+        if (timerElement) {
+            timerElement.textContent = `Refreshing in ${refreshCountdown}s`;
+            refreshCountdown--;
+
+            if (refreshCountdown < 0) {
+                updateCharacters();
+            }
+        }
+    }
+
+    // Role filtering
+    function applyRoleFilter() {
+        const cards = document.querySelectorAll('.character-card');
+
+        if (activeRoles.size === 0) {
+            // Show all
+            cards.forEach(card => card.style.display = 'flex');
+        } else {
+            // Filter by selected roles
+            cards.forEach(card => {
+                const cardRoles = card.dataset.roles.split(',').filter(r => r);
+                const hasMatchingRole = cardRoles.some(role => activeRoles.has(role));
+                card.style.display = hasMatchingRole ? 'flex' : 'none';
+            });
+        }
+    }
+
+    // Role filter click handlers
+    document.getElementById('roleFilters')?.addEventListener('click', (e) => {
+        if (e.target.classList.contains('filter-chip')) {
+            const role = e.target.dataset.role;
+
+            if (activeRoles.has(role)) {
+                activeRoles.delete(role);
+                e.target.classList.remove('active');
+            } else {
+                activeRoles.add(role);
+                e.target.classList.add('active');
+            }
+
+            applyRoleFilter();
+        }
+    });
+
+    // Start timers
+    setInterval(updateTimer, 1000);
+    setInterval(updateCharacters, 60000);
+</script>
+{% endblock %}

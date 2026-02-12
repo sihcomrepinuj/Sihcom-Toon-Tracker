@@ -1,0 +1,13 @@
+{
+  "name": "eve-character-tracker",
+  "version": "1.0.0",
+  "description": "EVE Online Character Tracker - Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "flask": "python app.py"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

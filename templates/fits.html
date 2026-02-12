@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Fit Checker - EVE Character Tracker{% endblock %}
+
+{% block content %}
+<div class="fit-checker">
+    <div class="fit-input-section">
+        <h2>Paste EFT Fit</h2>
+        <form id="fitForm">
+            <textarea id="fitText" name="fit_text" rows="12" placeholder="[Raven, PvE Raven]&#10;Ballistic Control System II&#10;Ballistic Control System II&#10;Cruise Missile Launcher II, Scourge Fury Cruise Missile&#10;..."></textarea>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Check Fit</button>
+                <button type="button" id="saveFitBtn" class="btn btn-secondary" style="display: none;">Save Fit</button>
+            </div>
+        </form>
+
+        {% if saved_fits %}
+        <div class="saved-fits">
+            <h3>Saved Fits</h3>
+            <div class="saved-fits-list">
+                {% for fit in saved_fits %}
+                    <button class="saved-fit-chip" data-fit-id="{{ fit.id }}">{{ fit.name }}</button>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="fit-results" id="fitResults" style="display: none;">
+        <div class="results-header">
+            <h2 id="fitName">Fit Name</h2>
+            <div class="results-summary">
+                <p>Total unique skills required: <strong id="totalSkills">0</strong></p>
+                <p>Characters who can fully fly: <strong id="canFlyCount">0</strong> of <strong id="totalChars">0</strong></p>
+            </div>
+        </div>
+
+        <div class="character-results" id="characterResults">
+            <!-- Results will be inserted here -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentFitText = '';
+
+    // Check fit form submission
+    document.getElementById('fitForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const fitText = document.getElementById('fitText').value.trim();
+        if (!fitText) return;
+
+        currentFitText = fitText;
+
+        try {
+            const response = await fetch('/api/check-fit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fit_text: fitText })
+            });
+
+            const data = await response.json();
+
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            displayResults(data);
+        } catch (error) {
+            console.error('Error checking fit:', error);
+            alert('Error checking fit');
+        }
+    });
+
+    // Save fit button
+    document.getElementById('saveFitBtn').addEventListener('click', async () => {
+        if (!currentFitText) return;
+
+        try {
+            const response = await fetch('/api/save-fit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fit_text: currentFitText })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Fit saved successfully!');
+                location.reload();
+            } else {
+                alert('Error saving fit');
+            }
+        } catch (error) {
+            console.error('Error saving fit:', error);
+            alert('Error saving fit');
+        }
+    });
+
+    // Load saved fit
+    document.querySelectorAll('.saved-fit-chip').forEach(chip => {
+        chip.addEventListener('click', async () => {
+            const fitId = chip.dataset.fitId;
+
+            try {
+                const response = await fetch(`/api/saved-fits/${fitId}`);
+                const data = await response.json();
+
+                if (data.eft_text) {
+                    document.getElementById('fitText').value = data.eft_text;
+                    document.getElementById('fitForm').dispatchEvent(new Event('submit'));
+                }
+            } catch (error) {
+                console.error('Error loading fit:', error);
+            }
+        });
+    });
+
+    function displayResults(data) {
+        const resultsDiv = document.getElementById('fitResults');
+        const resultsContainer = document.getElementById('characterResults');
+
+        document.getElementById('fitName').textContent = `${data.hull} — ${data.fit_name}`;
+        document.getElementById('totalSkills').textContent = data.total_skills;
+        document.getElementById('canFlyCount').textContent = data.can_fly_count;
+        document.getElementById('totalChars').textContent = data.total_characters;
+
+        resultsContainer.innerHTML = data.results.map(result => {
+            const icon = result.can_fly ? '✅' : (result.met_skills > 0 ? '⚠️' : '❌');
+            const statusClass = result.can_fly ? 'success' : (result.met_skills > 0 ? 'warning' : 'danger');
+
+            let skillsDisplay = `All ${result.total_skills}/${result.total_skills} skills met`;
+            if (!result.can_fly) {
+                skillsDisplay = `${result.met_skills}/${result.total_skills}`;
+            }
+
+            let missingSkillsHtml = '';
+            if (!result.can_fly && result.missing_skills.length > 0) {
+                missingSkillsHtml = `
+                    <div class="missing-skills" style="display: none;">
+                        ${result.missing_skills.map(skill => `
+                            <div class="missing-skill">
+                                Missing: ${skill.skill_name} ${skill.required_level > 0 ? 'level ' + skill.required_level : ''}
+                                ${skill.current_level > 0 ? '(has level ' + skill.current_level + ')' : '(not trained)'}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="character-result ${statusClass}" data-can-fly="${result.can_fly}">
+                    <div class="result-header" onclick="toggleMissingSkills(this)">
+                        <span class="result-icon">${icon}</span>
+                        <span class="result-name">${result.character_name}</span>
+                        <span class="result-skills">${skillsDisplay}</span>
+                        ${!result.can_fly ? '<span class="expand-toggle">▶ expand</span>' : ''}
+                    </div>
+                    ${missingSkillsHtml}
+                </div>
+            `;
+        }).join('');
+
+        resultsDiv.style.display = 'block';
+        document.getElementById('saveFitBtn').style.display = 'inline-block';
+    }
+
+    function toggleMissingSkills(header) {
+        const result = header.parentElement;
+        const missingSkills = result.querySelector('.missing-skills');
+        const toggle = result.querySelector('.expand-toggle');
+
+        if (missingSkills && toggle) {
+            const isVisible = missingSkills.style.display === 'block';
+            missingSkills.style.display = isVisible ? 'none' : 'block';
+            toggle.textContent = isVisible ? '▶ expand' : '▼ collapse';
+        }
+    }
+</script>
+{% endblock %}
