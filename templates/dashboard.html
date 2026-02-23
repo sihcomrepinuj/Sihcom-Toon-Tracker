@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - EVE Character Tracker{% endblock %}
+{% block title %}Dashboard - Sihcom Toon Tracker{% endblock %}
 
 {% block content %}
 <div class="dashboard">
@@ -12,49 +12,72 @@
                 {% endfor %}
             {% endif %}
         </div>
+        <div class="search-bar">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search characters..." autocomplete="off">
+            <div class="search-status" id="searchStatus"></div>
+        </div>
         <div class="refresh-indicator">
             <span id="refreshTimer">Refreshing in 60s</span>
         </div>
     </div>
 
-    <div class="character-list" id="characterList">
+    <div class="character-grid" id="characterList">
         {% if characters %}
             {% for char in characters %}
                 <div class="character-card"
                      data-online="{{ 'true' if char.location and char.location.is_online else 'false' }}"
-                     data-roles="{{ char.roles|map(attribute='name')|join(',') }}">
-                    <div class="character-portrait">
-                        <img src="https://images.evetech.net/characters/{{ char.id }}/portrait?size=64"
-                             alt="{{ char.name }}"
-                             class="portrait-img">
-                        <div class="status-indicator {{ 'online' if char.location and char.location.is_online else 'offline' }}"></div>
-                    </div>
-                    <div class="character-info">
+                     data-roles="{{ char.roles|map(attribute='name')|join(',') }}"
+                     data-name="{{ char.name }}"
+                     data-system="{{ char.location.solar_system_name if char.location else 'Unknown' }}"
+                     data-ship="{{ char.location.ship_name if char.location else 'Unknown' }}">
+                    <div class="card-header">
+                        <div class="character-portrait">
+                            <img src="https://images.evetech.net/characters/{{ char.id }}/portrait?size=128"
+                                 alt="{{ char.name }}"
+                                 class="portrait-img">
+                            {% if char.corporation_id %}
+                                <img src="https://images.evetech.net/corporations/{{ char.corporation_id }}/logo?size=32"
+                                     alt="Corp"
+                                     class="corp-logo">
+                            {% endif %}
+                            <div class="status-indicator {{ 'online' if char.location and char.location.is_online else 'offline' }}"></div>
+                        </div>
                         <h3 class="character-name">{{ char.name }}</h3>
-                        <div class="character-roles">
+                    </div>
+                    <div class="card-details">
+                        <div class="card-detail">
+                            <span class="detail-label">Location</span>
+                            {% if char.location %}
+                                <a href="https://evemaps.dotlan.net/system/{{ char.location.solar_system_name }}"
+                                   target="_blank"
+                                   class="system-link">
+                                    {{ char.location.solar_system_name }}
+                                </a>
+                            {% else %}
+                                <span class="unknown">Unknown</span>
+                            {% endif %}
+                        </div>
+                        <div class="card-detail">
+                            <span class="detail-label">Ship</span>
+                            {% if char.location %}
+                                <span>{{ char.location.ship_name }}</span>
+                            {% else %}
+                                <span class="unknown">Unknown</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if char.roles %}
+                        <div class="card-roles">
                             {% for role in char.roles %}
                                 <span class="role-chip">{{ role.name }}</span>
                             {% endfor %}
                         </div>
-                    </div>
-                    <div class="character-location">
-                        {% if char.location %}
-                            <a href="https://evemaps.dotlan.net/system/{{ char.location.solar_system_name }}"
-                               target="_blank"
-                               class="system-link">
-                                {{ char.location.solar_system_name }}
-                            </a>
-                        {% else %}
-                            <span class="unknown">Unknown</span>
-                        {% endif %}
-                    </div>
-                    <div class="character-ship">
-                        {% if char.location %}
-                            {{ char.location.ship_name }}
-                        {% else %}
-                            <span class="unknown">Unknown</span>
-                        {% endif %}
-                    </div>
+                    {% endif %}
+                    {% if char.location and char.location.last_updated %}
+                        <div class="card-timestamp" data-updated="{{ char.location.last_updated.isoformat() }}">
+                            Updated {{ char.location.last_updated.strftime('%H:%M') }}
+                        </div>
+                    {% endif %}
                 </div>
             {% endfor %}
         {% else %}
@@ -64,6 +87,27 @@
             </div>
         {% endif %}
     </div>
+    <div id="noResults" class="empty-search" style="display:none">No characters match your search.</div>
+</div>
+
+<!-- Floating Notepad Widget -->
+<button class="notepad-fab" id="notepadFab" title="Notes">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+    </svg>
+</button>
+<div class="notepad-panel" id="notepadPanel">
+    <div class="notepad-panel-header" id="notepadHeader">
+        <h3>Notes</h3>
+        <button class="notepad-close" id="notepadClose" title="Close">&times;</button>
+    </div>
+    <div class="notepad-panel-body">
+        <textarea
+            id="notepadTextarea"
+            class="notepad-textarea"
+            placeholder="Your freeform notes here... (auto-saves)"></textarea>
+        <div class="notepad-status" id="notepadStatus"></div>
+    </div>
 </div>
 {% endblock %}
 
@@ -71,8 +115,31 @@
 <script>
     let refreshCountdown = 60;
     let activeRoles = new Set();
+    let searchTerm = '';
 
-    // Auto-refresh functionality
+    // ---- Relative time helper ----
+    function relativeTime(isoString) {
+        if (!isoString) return '';
+        const then = new Date(isoString);
+        const now = new Date();
+        const diffSec = Math.floor((now - then) / 1000);
+
+        if (diffSec < 10) return 'just now';
+        if (diffSec < 60) return `${diffSec}s ago`;
+        const diffMin = Math.floor(diffSec / 60);
+        if (diffMin < 60) return `${diffMin}m ago`;
+        const diffHr = Math.floor(diffMin / 60);
+        if (diffHr < 24) return `${diffHr}h ago`;
+        return `${Math.floor(diffHr / 24)}d ago`;
+    }
+
+    function refreshTimestamps() {
+        document.querySelectorAll('.card-timestamp[data-updated]').forEach(el => {
+            el.textContent = 'Updated ' + relativeTime(el.dataset.updated);
+        });
+    }
+
+    // ---- Auto-refresh functionality ----
     function updateCharacters() {
         fetch('/api/locations')
             .then(response => response.json())
@@ -105,31 +172,50 @@
         characterList.innerHTML = characters.map(char => `
             <div class="character-card"
                  data-online="${char.online}"
-                 data-roles="${char.roles.join(',')}">
-                <div class="character-portrait">
-                    <img src="${char.portrait_url}" alt="${char.name}" class="portrait-img">
-                    <div class="status-indicator ${char.online ? 'online' : 'offline'}"></div>
-                </div>
-                <div class="character-info">
+                 data-roles="${char.roles.join(',')}"
+                 data-name="${char.name}"
+                 data-system="${char.system}"
+                 data-ship="${char.ship}">
+                <div class="card-header">
+                    <div class="character-portrait">
+                        <img src="${char.portrait_url}" alt="${char.name}" class="portrait-img">
+                        ${char.corporation_id ? `
+                            <img src="https://images.evetech.net/corporations/${char.corporation_id}/logo?size=32"
+                                 alt="Corp"
+                                 class="corp-logo">
+                        ` : ''}
+                        <div class="status-indicator ${char.online ? 'online' : 'offline'}"></div>
+                    </div>
                     <h3 class="character-name">${char.name}</h3>
-                    <div class="character-roles">
-                        ${char.roles.map(role => `<span class="role-chip">${role}</span>`).join('')}
+                </div>
+                <div class="card-details">
+                    <div class="card-detail">
+                        <span class="detail-label">Location</span>
+                        <a href="https://evemaps.dotlan.net/system/${char.system}"
+                           target="_blank"
+                           class="system-link">
+                            ${char.system}
+                        </a>
+                    </div>
+                    <div class="card-detail">
+                        <span class="detail-label">Ship</span>
+                        <span>${char.ship}</span>
                     </div>
                 </div>
-                <div class="character-location">
-                    <a href="https://evemaps.dotlan.net/system/${char.system}"
-                       target="_blank"
-                       class="system-link">
-                        ${char.system}
-                    </a>
-                </div>
-                <div class="character-ship">
-                    ${char.ship}
-                </div>
+                ${char.roles.length ? `
+                    <div class="card-roles">
+                        ${char.roles.map(role => `<span class="role-chip">${role}</span>`).join('')}
+                    </div>
+                ` : ''}
+                ${char.last_updated ? `
+                    <div class="card-timestamp" data-updated="${char.last_updated}">
+                        Updated ${relativeTime(char.last_updated)}
+                    </div>
+                ` : ''}
             </div>
         `).join('');
 
-        applyRoleFilter();
+        applyFilters();
     }
 
     function updateTimer() {
@@ -144,24 +230,86 @@
         }
     }
 
-    // Role filtering
-    function applyRoleFilter() {
+    // ---- Unified filtering (roles + search, AND logic) ----
+    function applyFilters() {
         const cards = document.querySelectorAll('.character-card');
+        const term = searchTerm.toLowerCase();
+        const total = cards.length;
+        let visible = 0;
+        const isFiltering = term || activeRoles.size > 0;
 
-        if (activeRoles.size === 0) {
-            // Show all
-            cards.forEach(card => card.style.display = 'flex');
-        } else {
-            // Filter by selected roles
-            cards.forEach(card => {
+        cards.forEach(card => {
+            // Role filter
+            let roleMatch = true;
+            if (activeRoles.size > 0) {
                 const cardRoles = card.dataset.roles.split(',').filter(r => r);
-                const hasMatchingRole = cardRoles.some(role => activeRoles.has(role));
-                card.style.display = hasMatchingRole ? 'flex' : 'none';
-            });
+                roleMatch = cardRoles.some(role => activeRoles.has(role));
+            }
+
+            // Search filter
+            let searchMatch = true;
+            if (term) {
+                const name = (card.dataset.name || '').toLowerCase();
+                const system = (card.dataset.system || '').toLowerCase();
+                const ship = (card.dataset.ship || '').toLowerCase();
+                const roles = (card.dataset.roles || '').toLowerCase();
+                searchMatch = name.includes(term) || system.includes(term) || ship.includes(term) || roles.includes(term);
+            }
+
+            const show = roleMatch && searchMatch;
+            card.style.display = show ? '' : 'none';
+            if (show) visible++;
+        });
+
+        // Update result count
+        const statusEl = document.getElementById('searchStatus');
+        if (statusEl) {
+            statusEl.textContent = isFiltering ? `Showing ${visible} of ${total} characters` : '';
+        }
+
+        // Update no-results message
+        const noResultsEl = document.getElementById('noResults');
+        if (noResultsEl) {
+            noResultsEl.style.display = (isFiltering && visible === 0) ? '' : 'none';
         }
     }
 
-    // Role filter click handlers
+    // ---- Search input handler ----
+    document.getElementById('searchInput')?.addEventListener('input', (e) => {
+        searchTerm = e.target.value.trim();
+        applyFilters();
+    });
+
+    // ---- Keyboard handlers (Ctrl+F to focus, Escape to clear, ` to toggle notepad) ----
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+            }
+        }
+        if (e.key === '`') {
+            e.preventDefault();
+            toggleNotepad();
+        }
+        if (e.key === 'Escape') {
+            if (notepadPanel && notepadPanel.classList.contains('open')) {
+                toggleNotepad(false);
+            } else {
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput && searchInput.value) {
+                    searchInput.value = '';
+                    searchTerm = '';
+                    searchInput.blur();
+                    applyFilters();
+                }
+            }
+        }
+    });
+
+    // ---- Role filter click handlers ----
     document.getElementById('roleFilters')?.addEventListener('click', (e) => {
         if (e.target.classList.contains('filter-chip')) {
             const role = e.target.dataset.role;
@@ -174,12 +322,98 @@
                 e.target.classList.add('active');
             }
 
-            applyRoleFilter();
+            applyFilters();
         }
     });
 
-    // Start timers
+    // ---- Start timers ----
     setInterval(updateTimer, 1000);
     setInterval(updateCharacters, 60000);
+    setInterval(refreshTimestamps, 30000);
+
+    // Initial relative time render
+    refreshTimestamps();
+
+    // ---- Notepad functionality ----
+    let saveTimeout = null;
+    const notepadTextarea = document.getElementById('notepadTextarea');
+    const notepadPanel = document.getElementById('notepadPanel');
+    const notepadFab = document.getElementById('notepadFab');
+    const notepadClose = document.getElementById('notepadClose');
+    const notepadStatus = document.getElementById('notepadStatus');
+
+    // Load notepad content on page load
+    async function loadNotepad() {
+        try {
+            const response = await fetch('/api/notepad');
+            const data = await response.json();
+            if (notepadTextarea && data.content !== undefined) {
+                notepadTextarea.value = data.content;
+            }
+        } catch (error) {
+            console.error('Error loading notepad:', error);
+        }
+    }
+
+    // Save notepad with debounce
+    function saveNotepad() {
+        if (saveTimeout) clearTimeout(saveTimeout);
+
+        notepadStatus.textContent = 'Saving...';
+        notepadStatus.className = 'notepad-status saving';
+
+        saveTimeout = setTimeout(async () => {
+            try {
+                const response = await fetch('/api/notepad', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: notepadTextarea.value })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    notepadStatus.textContent = 'Saved';
+                    notepadStatus.className = 'notepad-status saved';
+                    setTimeout(() => {
+                        notepadStatus.textContent = '';
+                        notepadStatus.className = 'notepad-status';
+                    }, 2000);
+                }
+            } catch (error) {
+                console.error('Error saving notepad:', error);
+                notepadStatus.textContent = 'Save failed';
+                notepadStatus.className = 'notepad-status';
+            }
+        }, 500);
+    }
+
+    // Auto-save on input
+    if (notepadTextarea) {
+        notepadTextarea.addEventListener('input', saveNotepad);
+    }
+
+    // Toggle floating panel
+    function toggleNotepad(open) {
+        const isOpen = open !== undefined ? open : !notepadPanel.classList.contains('open');
+        notepadPanel.classList.toggle('open', isOpen);
+        notepadFab.classList.toggle('hidden', isOpen);
+        localStorage.setItem('notepad-open', isOpen);
+        if (isOpen) notepadTextarea.focus();
+    }
+
+    if (notepadFab) {
+        notepadFab.addEventListener('click', () => toggleNotepad(true));
+    }
+
+    if (notepadClose) {
+        notepadClose.addEventListener('click', () => toggleNotepad(false));
+    }
+
+    // Restore open state from localStorage
+    if (localStorage.getItem('notepad-open') === 'true') {
+        toggleNotepad(true);
+    }
+
+    // Initial load
+    loadNotepad();
 </script>
 {% endblock %}

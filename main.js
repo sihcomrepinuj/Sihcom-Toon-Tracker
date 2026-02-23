@@ -8,7 +8,6 @@ const path = require('path');
 // ---------------------------------------------------------------------------
 const FLASK_PORT = 5000;
 const FLASK_URL = `http://localhost:${FLASK_PORT}`;
-const APP_DIR = __dirname;
 
 // ---------------------------------------------------------------------------
 // State
@@ -23,17 +22,62 @@ let oauthPollInterval = null;
 
 /**
  * Find a working Python command on this system.
- * Tries 'python', 'python3', and the Windows 'py' launcher.
+ * Tries common commands first, then checks well-known Windows install paths.
  */
 function findPython() {
+  const fs = require('fs');
+
+  // Try commands that might be on PATH
   for (const cmd of ['python', 'python3', 'py']) {
     try {
-      execSync(`${cmd} --version`, { stdio: 'pipe' });
+      execSync(`"${cmd}" --version`, { stdio: 'pipe' });
       return cmd;
     } catch {
       continue;
     }
   }
+
+  // Check common Windows install locations
+  const winPaths = [];
+  const localProgs = process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Python')
+    : null;
+
+  // Scan C:\PythonXXX
+  try {
+    const cDriveEntries = fs.readdirSync('C:\\').filter(d => d.match(/^Python\d/i));
+    for (const dir of cDriveEntries) {
+      winPaths.push(path.join('C:\\', dir, 'python.exe'));
+    }
+  } catch {}
+
+  // Scan AppData\Local\Programs\Python
+  if (localProgs) {
+    try {
+      const entries = fs.readdirSync(localProgs).filter(d => d.match(/^Python\d/i));
+      for (const dir of entries) {
+        winPaths.push(path.join(localProgs, dir, 'python.exe'));
+      }
+    } catch {}
+  }
+
+  // Scan Program Files
+  for (const pf of ['C:\\Program Files', 'C:\\Program Files (x86)']) {
+    try {
+      const entries = fs.readdirSync(pf).filter(d => d.match(/^Python\d/i));
+      for (const dir of entries) {
+        winPaths.push(path.join(pf, dir, 'python.exe'));
+      }
+    } catch {}
+  }
+
+  // Return the first one that exists
+  for (const p of winPaths) {
+    if (fs.existsSync(p)) {
+      return p;
+    }
+  }
+
   return null;
 }
 
@@ -51,9 +95,24 @@ function startFlask() {
     return;
   }
 
-  flaskProcess = spawn(pythonCmd, ['app.py', '--electron'], {
-    cwd: APP_DIR,
+  // __dirname points to the app files in both dev and packaged mode (with asar: false).
+  const appDir = __dirname;
+  const appPy = path.join(appDir, 'app.py');
+
+  console.log(`Starting Flask: ${pythonCmd} "${appPy}" --electron (cwd: ${appDir})`);
+
+  flaskProcess = spawn(pythonCmd, [appPy, '--electron'], {
+    cwd: appDir,
     stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  flaskProcess.on('error', (err) => {
+    console.error(`Failed to spawn Flask: ${err.message}`);
+    dialog.showErrorBox(
+      'Python Error',
+      `Could not start Python.\n\nCommand: ${pythonCmd}\nError: ${err.message}\n\nMake sure Python 3 is installed.`
+    );
+    flaskProcess = null;
   });
 
   flaskProcess.stdout.on('data', (data) => {
@@ -137,7 +196,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: 'EVE Character Tracker',
+    title: 'Sihcom Toon Tracker',
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,

@@ -1,11 +1,13 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from datetime import datetime
 import asyncio
+import json
 import logging
+import urllib.request
 from sqlalchemy.orm import selectinload
 
 from config import Config
-from models import init_db, get_session, Character, Role, LocationCache, SavedFit, CharacterSkill
+from models import init_db, get_session, Character, Role, LocationCache, SavedFit, CharacterSkill, Notepad
 from auth import init_preston, get_authorization_url, authenticate
 from poller import poller
 from eft_parser import parse_eft_fit, extract_item_names
@@ -65,7 +67,7 @@ def settings():
 
     db_session.close()
 
-    return render_template('settings.html', characters=characters, roles=roles)
+    return render_template('settings.html', characters=characters, roles=roles, now=datetime.utcnow())
 
 
 # ============================================================================
@@ -97,6 +99,17 @@ def callback():
         # Authenticate and get character info
         auth_data = authenticate(code)
 
+        # Fetch corporation_id from public ESI endpoint
+        corporation_id = None
+        try:
+            esi_url = f'https://esi.evetech.net/latest/characters/{auth_data["character_id"]}/'
+            req = urllib.request.Request(esi_url)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                char_public = json.loads(resp.read().decode())
+                corporation_id = char_public.get('corporation_id')
+        except Exception as e:
+            logger.warning(f"Could not fetch corporation_id during auth: {e}")
+
         # Save character to database
         db_session = get_session()
 
@@ -107,6 +120,8 @@ def callback():
             character.access_token = auth_data['access_token']
             character.refresh_token = auth_data['refresh_token']
             character.token_expiry = auth_data['token_expiry']
+            if corporation_id:
+                character.corporation_id = corporation_id
             flash(f"Character {character.name} updated successfully!", 'success')
         else:
             # Create new character
@@ -116,6 +131,7 @@ def callback():
                 access_token=auth_data['access_token'],
                 refresh_token=auth_data['refresh_token'],
                 token_expiry=auth_data['token_expiry'],
+                corporation_id=corporation_id,
                 added_at=datetime.utcnow()
             )
             db_session.add(character)
@@ -157,7 +173,9 @@ def api_locations():
             'ship': location.ship_name if location else 'Unknown',
             'online': location.is_online if location else False,
             'roles': [role.name for role in char.roles],
-            'portrait_url': f'https://images.evetech.net/characters/{char.id}/portrait?size=64'
+            'portrait_url': f'https://images.evetech.net/characters/{char.id}/portrait?size=64',
+            'last_updated': location.last_updated.isoformat() if location and location.last_updated else None,
+            'corporation_id': char.corporation_id
         })
 
     db_session.close()
@@ -410,6 +428,56 @@ def api_refresh_skills():
     except Exception as e:
         logger.error(f"Error refreshing skills: {e}", exc_info=True)
         return jsonify({'success': False, 'error': 'Error refreshing skills'}), 500
+
+
+# ============================================================================
+# API ROUTES - Notepad
+# ============================================================================
+
+@app.route('/api/notepad', methods=['GET'])
+def api_get_notepad():
+    """Get the global notepad content."""
+    db_session = get_session()
+
+    notepad = db_session.query(Notepad).filter_by(id=1).first()
+
+    if not notepad:
+        # Lazy-create on first access
+        notepad = Notepad(id=1, content='', updated_at=datetime.utcnow())
+        db_session.add(notepad)
+        db_session.commit()
+
+    data = {
+        'content': notepad.content,
+        'updated_at': notepad.updated_at.isoformat() if notepad.updated_at else None
+    }
+
+    db_session.close()
+
+    return jsonify(data)
+
+
+@app.route('/api/notepad', methods=['POST'])
+def api_save_notepad():
+    """Save the global notepad content."""
+    data = request.json
+    content = data.get('content', '')
+
+    db_session = get_session()
+
+    notepad = db_session.query(Notepad).filter_by(id=1).first()
+
+    if notepad:
+        notepad.content = content
+        notepad.updated_at = datetime.utcnow()
+    else:
+        notepad = Notepad(id=1, content=content, updated_at=datetime.utcnow())
+        db_session.add(notepad)
+
+    db_session.commit()
+    db_session.close()
+
+    return jsonify({'success': True})
 
 
 # ============================================================================

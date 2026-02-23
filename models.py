@@ -23,6 +23,7 @@ class Character(Base):
     refresh_token = Column(String, nullable=False)
     access_token = Column(String)
     token_expiry = Column(DateTime)
+    corporation_id = Column(Integer, nullable=True)
     added_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -92,6 +93,17 @@ class SavedFit(Base):
 
     def __repr__(self):
         return f"<SavedFit(id={self.id}, name='{self.name}')>"
+
+
+class Notepad(Base):
+    __tablename__ = 'notepad'
+
+    id = Column(Integer, primary_key=True)  # Always id=1 for global notepad
+    content = Column(Text, nullable=False, default='')
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<Notepad(id={self.id}, updated={self.updated_at})>"
 
 
 # Database initialization

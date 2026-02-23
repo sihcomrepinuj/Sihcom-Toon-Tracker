@@ -16,7 +16,7 @@ class Config:
 
     # Database settings
     DATABASE_PATH = 'tracker.db'
-    SDE_DATABASE_PATH = 'sde.sqlite'
+    SDE_DATABASE_PATH = 'sde.sqlite.db'
 
     # OAuth scopes required
     EVE_SCOPES = [

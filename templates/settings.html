@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Settings - EVE Character Tracker{% endblock %}
+{% block title %}Settings - Sihcom Toon Tracker{% endblock %}
 
 {% block content %}
 <div class="settings">
@@ -17,6 +17,11 @@
                          alt="{{ char.name }}"
                          class="small-portrait">
                     <strong>{{ char.name }}</strong>
+                    {% if char.token_expiry is none %}
+                        <span class="token-status token-unknown" title="Token status unknown">Unknown</span>
+                    {% elif char.token_expiry < now %}
+                        <span class="token-status token-expired" title="Token refresh may have failed — try re-adding this character">Token Expired</span>
+                    {% endif %}
                 </div>
                 <div class="character-manage-roles">
                     {% for role in char.roles %}

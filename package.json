@@ -5,9 +5,39 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "flask": "python app.py"
+    "build": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.sihcom.eve-tracker",
+    "productName": "EVE Character Tracker",
+    "directories": {
+      "output": "dist"
+    },
+    "asar": false,
+    "files": [
+      "main.js",
+      "loading.html",
+      "app.py",
+      "auth.py",
+      "config.py",
+      "eft_parser.py",
+      "models.py",
+      "poller.py",
+      "skill_checker.py",
+      "requirements.txt",
+      ".env",
+      "static/**/*",
+      "templates/**/*"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "EVE-Character-Tracker.exe"
+    }
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
   }
 }

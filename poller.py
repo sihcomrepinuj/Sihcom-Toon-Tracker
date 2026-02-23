@@ -101,7 +101,7 @@ class ESIPoller:
 
             headers = {'Authorization': f'Bearer {character.access_token}'}
 
-            # Fetch location, online status, and ship in parallel
+            # Fetch location, online status, ship, and public char info in parallel
             location_task = self.fetch_json(
                 http_session,
                 f'https://esi.evetech.net/latest/characters/{character.id}/location/',
@@ -117,9 +117,15 @@ class ESIPoller:
                 f'https://esi.evetech.net/latest/characters/{character.id}/ship/',
                 headers
             )
+            # Public endpoint — no auth needed, fetches corporation_id
+            corp_task = self.fetch_json(
+                http_session,
+                f'https://esi.evetech.net/latest/characters/{character.id}/',
+                None
+            )
 
-            location_data, online_data, ship_data = await asyncio.gather(
-                location_task, online_task, ship_task, return_exceptions=True
+            location_data, online_data, ship_data, corp_data = await asyncio.gather(
+                location_task, online_task, ship_task, corp_task, return_exceptions=True
             )
 
             if isinstance(location_data, Exception) or isinstance(ship_data, Exception):
@@ -135,6 +141,13 @@ class ESIPoller:
             ship_name = await self.get_type_name(http_session, ship_type_id)
 
             is_online = online_data.get('online', False) if not isinstance(online_data, Exception) else False
+
+            # Update corporation_id if available
+            if not isinstance(corp_data, Exception) and corp_data:
+                new_corp_id = corp_data.get('corporation_id')
+                if new_corp_id and new_corp_id != character.corporation_id:
+                    character.corporation_id = new_corp_id
+                    db_session.commit()
 
             # Update or create location cache
             location_cache = db_session.query(LocationCache).filter_by(
