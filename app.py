@@ -354,6 +354,51 @@ def api_create_account():
     return jsonify({'success': True, 'account': result})
 
 
+@app.route('/api/accounts/<int:account_id>', methods=['PATCH'])
+def api_patch_account(account_id):
+    """Update an account's name / subscription / notes."""
+    data = request.json or {}
+    db_session = get_session()
+
+    account = db_session.query(Account).filter_by(id=account_id).first()
+    if not account:
+        db_session.close()
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+    if 'name' in data:
+        new_name = (data['name'] or '').strip()
+        if not new_name:
+            db_session.close()
+            return jsonify({'success': False, 'error': 'Account name is required'}), 422
+        clash = db_session.query(Account).filter(
+            Account.name == new_name, Account.id != account_id
+        ).first()
+        if clash:
+            db_session.close()
+            return jsonify({'success': False, 'error': 'Account name already exists'}), 422
+        account.name = new_name
+
+    if 'subscription' in data:
+        if data['subscription'] not in _VALID_SUBSCRIPTIONS:
+            db_session.close()
+            return jsonify({'success': False, 'error': 'Invalid subscription value'}), 422
+        account.subscription = data['subscription']
+
+    if 'notes' in data:
+        account.notes = data['notes']
+
+    db_session.commit()
+    result = {
+        'id': account.id,
+        'name': account.name,
+        'subscription': account.subscription,
+        'notes': account.notes,
+        'character_count': len(account.characters),
+    }
+    db_session.close()
+    return jsonify({'success': True, 'account': result})
+
+
 # ============================================================================
 # API ROUTES - Fits
 # ============================================================================

@@ -58,3 +58,31 @@ def test_create_account_rejects_duplicate(client):
 def test_create_account_rejects_invalid_subscription(client):
     resp = client.post('/api/accounts', json={'name': 'X', 'subscription': 'platinum'})
     assert resp.status_code == 422
+
+
+def test_patch_account_name(client):
+    create = client.post('/api/accounts', json={'name': 'Old'}).get_json()
+    acc_id = create['account']['id']
+    resp = client.patch(f'/api/accounts/{acc_id}', json={'name': 'New'})
+    assert resp.status_code == 200
+    assert resp.get_json()['account']['name'] == 'New'
+
+
+def test_patch_account_subscription_and_notes(client):
+    acc_id = client.post('/api/accounts', json={'name': 'Acc'}).get_json()['account']['id']
+    resp = client.patch(f'/api/accounts/{acc_id}', json={'subscription': 'alpha', 'notes': 'cheap'})
+    body = resp.get_json()
+    assert body['account']['subscription'] == 'alpha'
+    assert body['account']['notes'] == 'cheap'
+
+
+def test_patch_account_404(client):
+    resp = client.patch('/api/accounts/999', json={'name': 'Ghost'})
+    assert resp.status_code == 404
+
+
+def test_patch_account_rejects_duplicate_name(client):
+    client.post('/api/accounts', json={'name': 'A'})
+    b_id = client.post('/api/accounts', json={'name': 'B'}).get_json()['account']['id']
+    resp = client.patch(f'/api/accounts/{b_id}', json={'name': 'A'})
+    assert resp.status_code == 422
