@@ -319,6 +319,41 @@ def api_list_accounts():
     return jsonify(data)
 
 
+_VALID_SUBSCRIPTIONS = {'omega', 'alpha', 'unknown'}
+
+
+@app.route('/api/accounts', methods=['POST'])
+def api_create_account():
+    """Create a new account."""
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    subscription = data.get('subscription', 'unknown')
+    notes = data.get('notes')
+
+    if not name:
+        return jsonify({'success': False, 'error': 'Account name is required'}), 422
+    if subscription not in _VALID_SUBSCRIPTIONS:
+        return jsonify({'success': False, 'error': 'Invalid subscription value'}), 422
+
+    db_session = get_session()
+    if db_session.query(Account).filter_by(name=name).first():
+        db_session.close()
+        return jsonify({'success': False, 'error': 'Account name already exists'}), 422
+
+    account = Account(name=name, subscription=subscription, notes=notes)
+    db_session.add(account)
+    db_session.commit()
+    result = {
+        'id': account.id,
+        'name': account.name,
+        'subscription': account.subscription,
+        'notes': account.notes,
+        'character_count': 0,
+    }
+    db_session.close()
+    return jsonify({'success': True, 'account': result})
+
+
 # ============================================================================
 # API ROUTES - Fits
 # ============================================================================
