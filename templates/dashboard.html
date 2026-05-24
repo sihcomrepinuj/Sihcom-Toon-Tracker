@@ -125,6 +125,9 @@
     let refreshCountdown = 60;
     let activeRoles = new Set();
     let searchTerm = '';
+    let currentView = localStorage.getItem('dashboardView') || 'grouped';
+    let activeAccountFilter = 'all';  // 'all' | 'unassigned' | <accountId as string>
+    let cachedCharacters = [];
 
     // ---- Relative time helper ----
     function relativeTime(isoString) {
@@ -159,39 +162,22 @@
             .catch(error => console.error('Error fetching locations:', error));
     }
 
-    function updateCharacterDisplay(characters) {
-        const characterList = document.getElementById('characterList');
-
-        if (characters.length === 0) {
-            characterList.innerHTML = `
-                <div class="empty-state">
-                    <p>No characters added yet.</p>
-                    <p><a href="/settings">Add a character</a> to get started.</p>
-                </div>
-            `;
-            return;
-        }
-
-        // Sort: online first, then alphabetical
-        characters.sort((a, b) => {
-            if (a.online !== b.online) return b.online - a.online;
-            return a.name.localeCompare(b.name);
-        });
-
-        characterList.innerHTML = characters.map(char => `
+    function renderCardHTML(char) {
+        return `
             <div class="character-card"
                  data-online="${char.online}"
                  data-roles="${char.roles.join(',')}"
                  data-name="${char.name}"
                  data-system="${char.system}"
-                 data-ship="${char.ship}">
+                 data-ship="${char.ship}"
+                 data-account-id="${char.account_id ?? ''}"
+                 data-account-name="${char.account_name ?? ''}">
                 <div class="card-header">
                     <div class="character-portrait">
                         <img src="${char.portrait_url}" alt="${char.name}" class="portrait-img">
                         ${char.corporation_id ? `
                             <img src="https://images.evetech.net/corporations/${char.corporation_id}/logo?size=32"
-                                 alt="Corp"
-                                 class="corp-logo">
+                                 alt="Corp" class="corp-logo">
                         ` : ''}
                         <div class="status-indicator ${char.online ? 'online' : 'offline'}"></div>
                     </div>
@@ -201,10 +187,7 @@
                     <div class="card-detail">
                         <span class="detail-label">Location</span>
                         <a href="https://evemaps.dotlan.net/system/${char.system}"
-                           target="_blank"
-                           class="system-link">
-                            ${char.system}
-                        </a>
+                           target="_blank" class="system-link">${char.system}</a>
                     </div>
                     <div class="card-detail">
                         <span class="detail-label">Ship</span>
@@ -213,7 +196,13 @@
                 </div>
                 ${char.roles.length ? `
                     <div class="card-roles">
-                        ${char.roles.map(role => `<span class="role-chip">${role}</span>`).join('')}
+                        ${char.roles.map(r => `<span class="role-chip">${r}</span>`).join('')}
+                    </div>
+                ` : ''}
+                ${char.account_name ? `
+                    <div class="card-account">
+                        📛 ${char.account_name}${char.account_subscription === 'omega' ? ' · Ω'
+                                                  : char.account_subscription === 'alpha' ? ' · α' : ''}
                     </div>
                 ` : ''}
                 ${char.last_updated ? `
@@ -222,8 +211,105 @@
                     </div>
                 ` : ''}
             </div>
-        `).join('');
+        `;
+    }
 
+    function subBadgeHTML(sub) {
+        if (sub === 'omega') return '<span class="sub-badge omega">Omega</span>';
+        if (sub === 'alpha') return '<span class="sub-badge alpha">Alpha</span>';
+        return '';
+    }
+
+    function groupByAccount(characters) {
+        const groups = new Map();
+        for (const c of characters) {
+            const key = c.account_id ?? 'unassigned';
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    key: String(key),
+                    name: c.account_name || 'Unassigned',
+                    subscription: c.account_subscription || null,
+                    chars: [],
+                });
+            }
+            groups.get(key).chars.push(c);
+        }
+        const ordered = [...groups.values()].sort((a, b) => {
+            if (a.key === 'unassigned') return 1;
+            if (b.key === 'unassigned') return -1;
+            return a.name.localeCompare(b.name);
+        });
+        return ordered;
+    }
+
+    function renderGrouped(characters) {
+        const groups = groupByAccount(characters);
+        return groups.map(g => {
+            const collapsedKey = `groupCollapsed:${g.key}`;
+            const isCollapsed = localStorage.getItem(collapsedKey) === '1';
+            return `
+                <div class="account-group ${isCollapsed ? 'collapsed' : ''}" data-group-key="${g.key}">
+                    <div class="account-group-header">
+                        <span class="group-toggle-arrow">▾</span>
+                        <h2>${g.name}</h2>
+                        ${subBadgeHTML(g.subscription)}
+                        <span class="group-count">· ${g.chars.length} char${g.chars.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <div class="character-grid">
+                        ${g.chars.map(renderCardHTML).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderLoose(characters) {
+        return `<div class="character-grid">${characters.map(renderCardHTML).join('')}</div>`;
+    }
+
+    function rebuildAccountFilterChips(characters) {
+        const seen = new Map();
+        for (const c of characters) {
+            if (c.account_id && !seen.has(c.account_id)) {
+                seen.set(c.account_id, c.account_name);
+            }
+        }
+        const container = document.getElementById('accountFilters');
+        if (!container) return;
+        const fixed = container.querySelectorAll('[data-account-filter="all"], [data-account-filter="unassigned"]');
+        container.innerHTML = '';
+        fixed.forEach(b => container.appendChild(b));
+        for (const [id, name] of seen) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'account-chip filter-chip';
+            btn.dataset.accountFilter = String(id);
+            btn.textContent = name;
+            if (String(id) === activeAccountFilter) btn.classList.add('active');
+            container.appendChild(btn);
+        }
+    }
+
+    function updateCharacterDisplay(characters) {
+        cachedCharacters = characters;
+        characters.sort((a, b) => {
+            if (a.online !== b.online) return b.online - a.online;
+            return a.name.localeCompare(b.name);
+        });
+
+        const container = document.getElementById('characterList');
+        if (characters.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <p>No characters added yet.</p>
+                    <p><a href="/settings">Add a character</a> to get started.</p>
+                </div>
+            `;
+            return;
+        }
+
+        rebuildAccountFilterChips(characters);
+        container.innerHTML = currentView === 'grouped' ? renderGrouped(characters) : renderLoose(characters);
         applyFilters();
     }
 
@@ -239,48 +325,53 @@
         }
     }
 
-    // ---- Unified filtering (roles + search, AND logic) ----
+    // ---- Unified filtering (roles + account + search, AND logic) ----
     function applyFilters() {
         const cards = document.querySelectorAll('.character-card');
         const term = searchTerm.toLowerCase();
-        const total = cards.length;
         let visible = 0;
-        const isFiltering = term || activeRoles.size > 0;
+        const total = cards.length;
+        const isFiltering = term || activeRoles.size > 0 || activeAccountFilter !== 'all';
 
         cards.forEach(card => {
-            // Role filter
             let roleMatch = true;
             if (activeRoles.size > 0) {
                 const cardRoles = card.dataset.roles.split(',').filter(r => r);
-                roleMatch = cardRoles.some(role => activeRoles.has(role));
+                roleMatch = cardRoles.some(r => activeRoles.has(r));
             }
-
-            // Search filter
+            let accountMatch = true;
+            if (activeAccountFilter === 'unassigned') {
+                accountMatch = !card.dataset.accountId;
+            } else if (activeAccountFilter !== 'all') {
+                accountMatch = card.dataset.accountId === activeAccountFilter;
+            }
             let searchMatch = true;
             if (term) {
                 const name = (card.dataset.name || '').toLowerCase();
                 const system = (card.dataset.system || '').toLowerCase();
                 const ship = (card.dataset.ship || '').toLowerCase();
                 const roles = (card.dataset.roles || '').toLowerCase();
-                searchMatch = name.includes(term) || system.includes(term) || ship.includes(term) || roles.includes(term);
+                const account = (card.dataset.accountName || '').toLowerCase();
+                searchMatch = name.includes(term) || system.includes(term) || ship.includes(term)
+                           || roles.includes(term) || account.includes(term);
             }
-
-            const show = roleMatch && searchMatch;
+            const show = roleMatch && accountMatch && searchMatch;
             card.style.display = show ? '' : 'none';
             if (show) visible++;
         });
 
-        // Update result count
-        const statusEl = document.getElementById('searchStatus');
-        if (statusEl) {
-            statusEl.textContent = isFiltering ? `Showing ${visible} of ${total} characters` : '';
-        }
+        // In grouped view, hide empty groups
+        document.querySelectorAll('.account-group').forEach(group => {
+            const anyVisible = [...group.querySelectorAll('.character-card')]
+                .some(c => c.style.display !== 'none');
+            group.style.display = anyVisible ? '' : 'none';
+        });
 
-        // Update no-results message
+        const statusEl = document.getElementById('searchStatus');
+        if (statusEl) statusEl.textContent = isFiltering ? `Showing ${visible} of ${total} characters` : '';
+
         const noResultsEl = document.getElementById('noResults');
-        if (noResultsEl) {
-            noResultsEl.style.display = (isFiltering && visible === 0) ? '' : 'none';
-        }
+        if (noResultsEl) noResultsEl.style.display = (isFiltering && visible === 0) ? '' : 'none';
     }
 
     // ---- Search input handler ----
@@ -334,6 +425,48 @@
             applyFilters();
         }
     });
+
+    // View toggle
+    document.getElementById('viewToggle')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.view-toggle-btn');
+        if (!btn) return;
+        currentView = btn.dataset.view;
+        localStorage.setItem('dashboardView', currentView);
+        document.querySelectorAll('.view-toggle-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.view === currentView);
+        });
+        if (cachedCharacters.length) updateCharacterDisplay(cachedCharacters);
+    });
+
+    // Account filter chips
+    document.getElementById('accountFilters')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.account-chip');
+        if (!btn) return;
+        activeAccountFilter = btn.dataset.accountFilter;
+        document.querySelectorAll('#accountFilters .account-chip').forEach(b => {
+            b.classList.toggle('active', b.dataset.accountFilter === activeAccountFilter);
+        });
+        applyFilters();
+    });
+
+    // Group header collapse
+    document.getElementById('characterList')?.addEventListener('click', (e) => {
+        const header = e.target.closest('.account-group-header');
+        if (!header) return;
+        const group = header.parentElement;
+        const key = group.dataset.groupKey;
+        const nowCollapsed = !group.classList.contains('collapsed');
+        group.classList.toggle('collapsed', nowCollapsed);
+        localStorage.setItem(`groupCollapsed:${key}`, nowCollapsed ? '1' : '0');
+    });
+
+    // Sync initial toggle button state
+    document.querySelectorAll('.view-toggle-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.view === currentView);
+    });
+
+    // Trigger an immediate fetch so the initial render uses the chosen view
+    updateCharacters();
 
     // ---- Start timers ----
     setInterval(updateTimer, 1000);
