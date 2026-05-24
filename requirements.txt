@@ -3,3 +3,4 @@ preston
 aiohttp
 sqlalchemy
 python-dotenv
+pytest
