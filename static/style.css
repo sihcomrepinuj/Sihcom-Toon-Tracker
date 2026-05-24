@@ -1036,3 +1036,61 @@ body {
         grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     }
 }
+
+/* Accounts management */
+.accounts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.account-item {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-primary);
+    border-radius: 6px;
+    padding: 0.75rem;
+}
+
+.account-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.account-name-input {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--color-border-input);
+    border-radius: 4px;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+}
+
+.account-sub-select {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--color-border-input);
+    border-radius: 4px;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+}
+
+.account-char-count {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.account-notes {
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--color-border-input);
+    border-radius: 4px;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    min-height: 2rem;
+    resize: vertical;
+}

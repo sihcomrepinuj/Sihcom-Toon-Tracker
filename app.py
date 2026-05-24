@@ -67,7 +67,7 @@ def settings():
         selectinload(Character.account),
     ).all()
     roles = db_session.query(Role).all()
-    accounts = db_session.query(Account).all()
+    accounts = db_session.query(Account).options(selectinload(Account.characters)).all()
 
     db_session.close()
 

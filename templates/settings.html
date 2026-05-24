@@ -42,6 +42,46 @@
     </section>
 
     <section class="settings-section">
+        <h2>Accounts</h2>
+        <form id="createAccountForm" class="inline-form">
+            <input type="text" id="newAccountName" placeholder="New account name" required>
+            <select id="newAccountSubscription">
+                <option value="unknown">Unknown</option>
+                <option value="omega">Omega</option>
+                <option value="alpha">Alpha</option>
+            </select>
+            <button type="submit" class="btn btn-secondary">Create Account</button>
+        </form>
+
+        {% if accounts %}
+        <div class="accounts-list">
+            {% for acc in accounts %}
+            <div class="account-item" id="account-{{ acc.id }}" data-account-id="{{ acc.id }}">
+                <div class="account-row">
+                    <input type="text"
+                           class="account-name-input"
+                           value="{{ acc.name }}"
+                           data-original="{{ acc.name }}"
+                           onchange="patchAccount({{ acc.id }}, 'name', this.value)">
+                    <select class="account-sub-select"
+                            onchange="patchAccount({{ acc.id }}, 'subscription', this.value)">
+                        <option value="unknown" {% if acc.subscription == 'unknown' %}selected{% endif %}>Unknown</option>
+                        <option value="omega" {% if acc.subscription == 'omega' %}selected{% endif %}>Omega</option>
+                        <option value="alpha" {% if acc.subscription == 'alpha' %}selected{% endif %}>Alpha</option>
+                    </select>
+                    <span class="account-char-count">{{ acc.characters|length }} char{{ '' if acc.characters|length == 1 else 's' }}</span>
+                    <button class="btn btn-danger btn-small" onclick="deleteAccount({{ acc.id }}, {{ acc.characters|length }})">Delete</button>
+                </div>
+                <textarea class="account-notes"
+                          placeholder="Optional notes..."
+                          onchange="patchAccount({{ acc.id }}, 'notes', this.value)">{{ acc.notes or '' }}</textarea>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="settings-section">
         <h2>Roles</h2>
         <form id="createRoleForm" class="inline-form">
             <input type="text" id="newRoleName" placeholder="New role name" required>
