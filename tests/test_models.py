@@ -55,3 +55,36 @@ def test_delete_account_sets_character_null(temp_db):
     assert fetched is not None
     assert fetched.account_id is None
     s.close()
+
+
+import sqlite3
+
+
+def test_migration_adds_account_id_to_legacy_table(temp_db, monkeypatch):
+    """Simulate a pre-feature DB: drop the column, then re-run init_db."""
+    # Drop and recreate the characters table without account_id to simulate legacy
+    conn = sqlite3.connect(temp_db)
+    conn.execute("DROP TABLE characters")
+    conn.execute("""
+        CREATE TABLE characters (
+            id INTEGER PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            refresh_token VARCHAR NOT NULL,
+            access_token VARCHAR,
+            token_expiry DATETIME,
+            corporation_id INTEGER,
+            added_at DATETIME
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+    # Run migration
+    from models import init_db
+    init_db()
+
+    # Verify account_id column now exists
+    conn = sqlite3.connect(temp_db)
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(characters)")]
+    conn.close()
+    assert 'account_id' in cols

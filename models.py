@@ -135,10 +135,25 @@ def _enable_sqlite_fk(dbapi_connection, _):
 
 # Database initialization
 def init_db():
-    """Initialize the application database."""
+    """Initialize the application database, applying any needed migrations."""
     engine = create_engine(f'sqlite:///{Config.DATABASE_PATH}')
     Base.metadata.create_all(engine)
+    _migrate_add_account_id(engine)
     return engine
+
+
+def _migrate_add_account_id(engine):
+    """Add characters.account_id if missing (idempotent)."""
+    with engine.connect() as conn:
+        from sqlalchemy import text
+        result = conn.execute(text("PRAGMA table_info(characters)")).fetchall()
+        cols = [row[1] for row in result]
+        if 'account_id' not in cols:
+            conn.execute(text(
+                "ALTER TABLE characters ADD COLUMN account_id INTEGER "
+                "REFERENCES accounts(id) ON DELETE SET NULL"
+            ))
+            conn.commit()
 
 
 def get_session():
