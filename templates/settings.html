@@ -32,6 +32,15 @@
                     {% endfor %}
                     <button class="btn btn-small" onclick="showAddRoleDialog({{ char.id }})">+ Add Role</button>
                 </div>
+                <div class="character-manage-account">
+                    <label class="account-label">Account:</label>
+                    <select onchange="assignCharacterAccount({{ char.id }}, this)">
+                        <option value="" {% if not char.account_id %}selected{% endif %}>— Unassigned —</option>
+                        {% for acc in accounts %}
+                            <option value="{{ acc.id }}" {% if char.account_id == acc.id %}selected{% endif %}>{{ acc.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="character-manage-actions">
                     <button class="btn btn-danger btn-small" onclick="removeCharacter({{ char.id }})">Remove</button>
                 </div>
@@ -279,6 +288,81 @@
         } catch (error) {
             console.error('Error refreshing skills:', error);
             alert('Error refreshing skills');
+        }
+    }
+
+    // ---- Accounts CRUD ----
+    document.getElementById('createAccountForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('newAccountName').value.trim();
+        const subscription = document.getElementById('newAccountSubscription').value;
+        if (!name) return;
+        try {
+            const resp = await fetch('/api/accounts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, subscription })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.error || 'Error creating account');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Error creating account');
+        }
+    });
+
+    async function patchAccount(accountId, field, value) {
+        try {
+            const resp = await fetch(`/api/accounts/${accountId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [field]: value })
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                alert(data.error || 'Error updating account');
+                location.reload();
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function deleteAccount(accountId, charCount) {
+        const msg = charCount > 0
+            ? `Move ${charCount} character${charCount === 1 ? '' : 's'} to Unassigned and delete this account?`
+            : 'Delete this account?';
+        if (!confirm(msg)) return;
+        try {
+            const resp = await fetch(`/api/accounts/${accountId}`, { method: 'DELETE' });
+            const data = await resp.json();
+            if (data.success) location.reload();
+            else alert(data.error || 'Error deleting account');
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function assignCharacterAccount(characterId, selectEl) {
+        const value = selectEl.value;
+        const payload = { account_id: value === '' ? null : parseInt(value, 10) };
+        try {
+            const resp = await fetch(`/api/characters/${characterId}/account`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                alert(data.error || 'Error assigning account');
+                location.reload();
+            }
+        } catch (err) {
+            console.error(err);
         }
     }
 </script>
