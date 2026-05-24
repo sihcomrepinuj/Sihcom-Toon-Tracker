@@ -25,11 +25,13 @@ class Character(Base):
     token_expiry = Column(DateTime)
     corporation_id = Column(Integer, nullable=True)
     added_at = Column(DateTime, default=datetime.utcnow)
+    account_id = Column(Integer, ForeignKey('accounts.id', ondelete='SET NULL'), nullable=True)
 
     # Relationships
     roles = relationship('Role', secondary=character_roles, back_populates='characters')
     location = relationship('LocationCache', back_populates='character', uselist=False)
     skills = relationship('CharacterSkill', back_populates='character')
+    account = relationship('Account', back_populates='characters')
 
     def __repr__(self):
         return f"<Character(id={self.id}, name='{self.name}')>"
@@ -46,6 +48,21 @@ class Role(Base):
 
     def __repr__(self):
         return f"<Role(id={self.id}, name='{self.name}')>"
+
+
+class Account(Base):
+    __tablename__ = 'accounts'
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    name         = Column(String, nullable=False, unique=True)
+    subscription = Column(String, nullable=False, default='unknown')  # 'omega' | 'alpha' | 'unknown'
+    notes        = Column(Text, nullable=True)
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
+    characters = relationship('Character', back_populates='account')
+
+    def __repr__(self):
+        return f"<Account(id={self.id}, name='{self.name}', subscription='{self.subscription}')>"
 
 
 class LocationCache(Base):
@@ -104,6 +121,16 @@ class Notepad(Base):
 
     def __repr__(self):
         return f"<Notepad(id={self.id}, updated={self.updated_at})>"
+
+
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_fk(dbapi_connection, _):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 # Database initialization
