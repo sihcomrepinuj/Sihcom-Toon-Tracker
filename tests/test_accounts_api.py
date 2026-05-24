@@ -166,3 +166,23 @@ def test_assign_character_404_account(client):
 
     resp = client.put('/api/characters/102/account', json={'account_id': 9999})
     assert resp.status_code == 404
+
+
+def test_locations_includes_account_fields(client):
+    from models import get_session, Character
+    acc_id = client.post('/api/accounts', json={'name': 'Main', 'subscription': 'omega'}).get_json()['account']['id']
+    s = get_session()
+    s.add_all([
+        Character(id=200, name='Assigned', refresh_token='rt', account_id=acc_id),
+        Character(id=201, name='Unassigned', refresh_token='rt'),
+    ])
+    s.commit()
+    s.close()
+
+    data = client.get('/api/locations').get_json()
+    by_name = {c['name']: c for c in data}
+    assert by_name['Assigned']['account_id'] == acc_id
+    assert by_name['Assigned']['account_name'] == 'Main'
+    assert by_name['Assigned']['account_subscription'] == 'omega'
+    assert by_name['Unassigned']['account_id'] is None
+    assert by_name['Unassigned']['account_name'] is None

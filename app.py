@@ -61,13 +61,23 @@ def settings():
     """Settings page for character and role management."""
     db_session = get_session()
 
-    # Eagerly load the roles relationship to avoid DetachedInstanceError
-    characters = db_session.query(Character).options(selectinload(Character.roles)).all()
+    # Eagerly load the roles and account relationships to avoid DetachedInstanceError
+    characters = db_session.query(Character).options(
+        selectinload(Character.roles),
+        selectinload(Character.account),
+    ).all()
     roles = db_session.query(Role).all()
+    accounts = db_session.query(Account).all()
 
     db_session.close()
 
-    return render_template('settings.html', characters=characters, roles=roles, now=datetime.utcnow())
+    return render_template(
+        'settings.html',
+        characters=characters,
+        roles=roles,
+        accounts=accounts,
+        now=datetime.utcnow(),
+    )
 
 
 # ============================================================================
@@ -161,7 +171,7 @@ def api_locations():
     """Get all character locations as JSON."""
     db_session = get_session()
 
-    characters = db_session.query(Character).all()
+    characters = db_session.query(Character).options(selectinload(Character.account)).all()
 
     data = []
     for char in characters:
@@ -175,7 +185,10 @@ def api_locations():
             'roles': [role.name for role in char.roles],
             'portrait_url': f'https://images.evetech.net/characters/{char.id}/portrait?size=64',
             'last_updated': location.last_updated.isoformat() if location and location.last_updated else None,
-            'corporation_id': char.corporation_id
+            'corporation_id': char.corporation_id,
+            'account_id': char.account_id,
+            'account_name': char.account.name if char.account else None,
+            'account_subscription': char.account.subscription if char.account else None,
         })
 
     db_session.close()
