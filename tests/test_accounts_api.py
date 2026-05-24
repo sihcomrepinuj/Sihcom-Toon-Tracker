@@ -86,3 +86,33 @@ def test_patch_account_rejects_duplicate_name(client):
     b_id = client.post('/api/accounts', json={'name': 'B'}).get_json()['account']['id']
     resp = client.patch(f'/api/accounts/{b_id}', json={'name': 'A'})
     assert resp.status_code == 422
+
+
+def test_delete_account(client):
+    acc_id = client.post('/api/accounts', json={'name': 'Bye'}).get_json()['account']['id']
+    resp = client.delete(f'/api/accounts/{acc_id}')
+    assert resp.status_code == 200
+    assert resp.get_json()['success'] is True
+    assert client.get('/api/accounts').get_json() == []
+
+
+def test_delete_account_sets_characters_unassigned(client):
+    from models import get_session, Character
+    acc_id = client.post('/api/accounts', json={'name': 'Doomed'}).get_json()['account']['id']
+    s = get_session()
+    s.add(Character(id=789, name='Pilot', refresh_token='rt', account_id=acc_id))
+    s.commit()
+    s.close()
+
+    client.delete(f'/api/accounts/{acc_id}')
+
+    s = get_session()
+    char = s.query(Character).filter_by(id=789).first()
+    assert char is not None
+    assert char.account_id is None
+    s.close()
+
+
+def test_delete_account_404(client):
+    resp = client.delete('/api/accounts/999')
+    assert resp.status_code == 404

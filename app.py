@@ -399,6 +399,21 @@ def api_patch_account(account_id):
     return jsonify({'success': True, 'account': result})
 
 
+@app.route('/api/accounts/<int:account_id>', methods=['DELETE'])
+def api_delete_account(account_id):
+    """Delete an account; characters fall back to unassigned via ON DELETE SET NULL."""
+    db_session = get_session()
+    account = db_session.query(Account).filter_by(id=account_id).first()
+    if not account:
+        db_session.close()
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+    db_session.delete(account)
+    db_session.commit()
+    db_session.close()
+    return jsonify({'success': True})
+
+
 # ============================================================================
 # API ROUTES - Fits
 # ============================================================================
