@@ -7,7 +7,7 @@ import urllib.request
 from sqlalchemy.orm import selectinload
 
 from config import Config
-from models import init_db, get_session, Character, Role, LocationCache, SavedFit, CharacterSkill, Notepad
+from models import init_db, get_session, Character, Role, LocationCache, SavedFit, CharacterSkill, Notepad, Account
 from auth import init_preston, get_authorization_url, authenticate
 from poller import poller
 from eft_parser import parse_eft_fit, extract_item_names
@@ -294,6 +294,29 @@ def api_remove_character_role(character_id, role_id):
     db_session.close()
 
     return jsonify({'success': True})
+
+
+# ============================================================================
+# API ROUTES - Accounts
+# ============================================================================
+
+@app.route('/api/accounts', methods=['GET'])
+def api_list_accounts():
+    """List all accounts with character counts."""
+    db_session = get_session()
+    accounts = db_session.query(Account).all()
+    data = [
+        {
+            'id': a.id,
+            'name': a.name,
+            'subscription': a.subscription,
+            'notes': a.notes,
+            'character_count': len(a.characters),
+        }
+        for a in accounts
+    ]
+    db_session.close()
+    return jsonify(data)
 
 
 # ============================================================================
