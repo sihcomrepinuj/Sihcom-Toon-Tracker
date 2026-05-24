@@ -12,9 +12,18 @@
                 {% endfor %}
             {% endif %}
         </div>
+        <div class="account-filters" id="accountFilters">
+            <button class="account-chip filter-chip active" data-account-filter="all" type="button">All</button>
+            <button class="account-chip filter-chip" data-account-filter="unassigned" type="button">Unassigned</button>
+            {# Account-specific chips are injected by JS once /api/locations is fetched #}
+        </div>
         <div class="search-bar">
             <input type="text" id="searchInput" class="search-input" placeholder="Search characters..." autocomplete="off">
             <div class="search-status" id="searchStatus"></div>
+        </div>
+        <div class="view-toggle" id="viewToggle" role="group" aria-label="View mode">
+            <button class="view-toggle-btn active" data-view="grouped" type="button">Grouped</button>
+            <button class="view-toggle-btn" data-view="loose" type="button">Loose</button>
         </div>
         <div class="refresh-indicator">
             <span id="refreshTimer">Refreshing in 60s</span>

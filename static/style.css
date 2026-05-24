@@ -1115,3 +1115,108 @@ body {
     color: var(--color-text-primary);
     font-size: 0.85rem;
 }
+
+/* View toggle */
+.view-toggle {
+    display: inline-flex;
+    border: 1px solid var(--color-border-primary);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.view-toggle-btn {
+    padding: 0.4rem 0.8rem;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    border: 0;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+.view-toggle-btn.active {
+    background: var(--color-btn-primary);
+    color: white;
+}
+
+/* Account filter chips */
+.account-filters {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.account-chip.filter-chip {
+    padding: 0.3rem 0.7rem;
+    border-radius: 12px;
+    border: 1px solid var(--color-border-primary);
+    background: var(--color-bg-chip);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+.account-chip.filter-chip.active {
+    background: var(--color-btn-primary);
+    color: white;
+    border-color: var(--color-btn-primary);
+}
+
+/* Grouped view */
+.account-group {
+    margin-bottom: 1.5rem;
+}
+.account-group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border-primary);
+    cursor: pointer;
+    user-select: none;
+}
+.account-group-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--color-text-heading);
+}
+.account-group-header .group-count {
+    color: var(--color-text-secondary);
+    font-size: 0.85rem;
+}
+.account-group-header .group-toggle-arrow {
+    color: var(--color-text-secondary);
+    transition: transform 0.15s ease;
+}
+.account-group.collapsed .group-toggle-arrow {
+    transform: rotate(-90deg);
+}
+.account-group.collapsed .character-grid {
+    display: none;
+}
+
+/* Subscription badge */
+.sub-badge {
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.sub-badge.omega {
+    background: #f5c542;
+    color: #5a4400;
+}
+.sub-badge.alpha {
+    background: #d0d0d0;
+    color: #444;
+}
+
+/* Per-card account chip */
+.card-account {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+    border-top: 1px dashed var(--color-border-divider);
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+}
