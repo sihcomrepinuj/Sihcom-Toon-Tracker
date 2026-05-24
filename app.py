@@ -414,6 +414,32 @@ def api_delete_account(account_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/characters/<int:character_id>/account', methods=['PUT'])
+def api_assign_character_account(character_id):
+    """Assign a character to an account (or null to unassign)."""
+    data = request.json or {}
+    account_id = data.get('account_id')
+
+    db_session = get_session()
+    character = db_session.query(Character).filter_by(id=character_id).first()
+    if not character:
+        db_session.close()
+        return jsonify({'success': False, 'error': 'Character not found'}), 404
+
+    if account_id is not None:
+        account = db_session.query(Account).filter_by(id=account_id).first()
+        if not account:
+            db_session.close()
+            return jsonify({'success': False, 'error': 'Account not found'}), 404
+        character.account_id = account_id
+    else:
+        character.account_id = None
+
+    db_session.commit()
+    db_session.close()
+    return jsonify({'success': True})
+
+
 # ============================================================================
 # API ROUTES - Fits
 # ============================================================================
