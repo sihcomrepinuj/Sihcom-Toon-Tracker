@@ -246,7 +246,6 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 2. **Portable .exe build requires admin PowerShell** — electron-builder needs symlink permissions on Windows. Run `npm run build` from an admin terminal.
 3. **`.env` bundled in portable build** — The `.env` file with EVE SSO credentials is included in the portable exe. Fine for personal use, but would need a different strategy for distribution.
 4. **Flash messages after OAuth** — When OAuth completes in the system browser, Flask's flash message appears in the browser tab, not in Electron. Minor cosmetic issue.
-5. **`sde.sqlite.db` filename mismatch** — Config says `SDE_DATABASE_PATH = 'sde.sqlite'` but the actual file is `sde.sqlite.db`. Not yet fixed.
 
 ## Feature Backlog
 
@@ -263,7 +262,6 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 - ~~Organize characters by account (first-class `Account` entity, view toggle, account filter)~~ ✅
 
 ### High Priority
-- Fix SDE filename mismatch in `config.py`
 - Test the full OAuth flow end-to-end in Electron
 - Add an app icon to the Electron window and portable exe
 
