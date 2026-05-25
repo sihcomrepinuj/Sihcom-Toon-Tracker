@@ -30,70 +30,12 @@
         </div>
     </div>
 
-    <div class="character-grid" id="characterList">
-        {% if characters %}
-            {% for char in characters %}
-                <div class="character-card"
-                     data-online="{{ 'true' if char.location and char.location.is_online else 'false' }}"
-                     data-roles="{{ char.roles|map(attribute='name')|join(',') }}"
-                     data-name="{{ char.name }}"
-                     data-system="{{ char.location.solar_system_name if char.location else 'Unknown' }}"
-                     data-ship="{{ char.location.ship_name if char.location else 'Unknown' }}">
-                    <div class="card-header">
-                        <div class="character-portrait">
-                            <img src="https://images.evetech.net/characters/{{ char.id }}/portrait?size=128"
-                                 alt="{{ char.name }}"
-                                 class="portrait-img">
-                            {% if char.corporation_id %}
-                                <img src="https://images.evetech.net/corporations/{{ char.corporation_id }}/logo?size=32"
-                                     alt="Corp"
-                                     class="corp-logo">
-                            {% endif %}
-                            <div class="status-indicator {{ 'online' if char.location and char.location.is_online else 'offline' }}"></div>
-                        </div>
-                        <h3 class="character-name">{{ char.name }}</h3>
-                    </div>
-                    <div class="card-details">
-                        <div class="card-detail">
-                            <span class="detail-label">Location</span>
-                            {% if char.location %}
-                                <a href="https://evemaps.dotlan.net/system/{{ char.location.solar_system_name }}"
-                                   target="_blank"
-                                   class="system-link">
-                                    {{ char.location.solar_system_name }}
-                                </a>
-                            {% else %}
-                                <span class="unknown">Unknown</span>
-                            {% endif %}
-                        </div>
-                        <div class="card-detail">
-                            <span class="detail-label">Ship</span>
-                            {% if char.location %}
-                                <span>{{ char.location.ship_name }}</span>
-                            {% else %}
-                                <span class="unknown">Unknown</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% if char.roles %}
-                        <div class="card-roles">
-                            {% for role in char.roles %}
-                                <span class="role-chip">{{ role.name }}</span>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
-                    {% if char.location and char.location.last_updated %}
-                        <div class="card-timestamp" data-updated="{{ char.location.last_updated.isoformat() }}">
-                            Updated {{ char.location.last_updated.strftime('%H:%M') }}
-                        </div>
-                    {% endif %}
-                </div>
-            {% endfor %}
-        {% else %}
-            <div class="empty-state">
-                <p>No characters added yet.</p>
-                <p><a href="{{ url_for('settings') }}">Add a character</a> to get started.</p>
-            </div>
+    <div id="characterList">
+        {% if not characters %}
+        <div class="empty-state">
+            <p>No characters added yet.</p>
+            <p><a href="{{ url_for('settings') }}">Add a character</a> to get started.</p>
+        </div>
         {% endif %}
     </div>
     <div id="noResults" class="empty-search" style="display:none">No characters match your search.</div>
