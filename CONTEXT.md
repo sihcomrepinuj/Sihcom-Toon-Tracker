@@ -209,7 +209,8 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 - Corporation fetch uses public ESI endpoint (no auth), so it works even if tokens are expired
 
 ### Database Models (`models.py`)
-- **Character**: ID, name, tokens, expiry, corporation_id
+- **Character**: ID, name, tokens, expiry, corporation_id, account_id (nullable FK)
+- **Account**: First-class entity (name, subscription, notes). Nullable FK from Character (ON DELETE SET NULL).
 - **Role**: Custom tags (Capital, Cyno, Scout, etc.)
 - **LocationCache**: Cached location/ship/online status
 - **CharacterSkill**: Cached skill data for fit checking
@@ -229,6 +230,11 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 | `/api/roles/<id>` | DELETE | Delete role |
 | `/api/characters/<id>/roles` | POST | Assign role |
 | `/api/characters/<id>/roles/<rid>` | DELETE | Remove role |
+| `/api/accounts` | GET | List accounts |
+| `/api/accounts` | POST | Create account |
+| `/api/accounts/<id>` | PATCH | Update account |
+| `/api/accounts/<id>` | DELETE | Delete account (chars become unassigned) |
+| `/api/characters/<id>/account` | PUT | Assign character to account |
 | `/api/check-fit` | POST | Validate EFT fit |
 | `/api/save-fit` | POST | Save fit |
 | `/api/saved-fits/<id>` | GET | Retrieve saved fit |
@@ -252,6 +258,9 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 - ~~No-results message~~ ✅
 - ~~Escape to clear search~~ ✅
 - ~~Corporation logo on dashboard cards~~ ✅
+
+### Completed (Session 4 — 2026-05-24)
+- ~~Organize characters by account (first-class `Account` entity, view toggle, account filter)~~ ✅
 
 ### High Priority
 - Fix SDE filename mismatch in `config.py`
@@ -282,6 +291,6 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 
 ---
 
-**Last Updated**: February 12, 2026
+**Last Updated**: 2026-05-24
 **Status**: Fully functional as Electron desktop app via `npm start`
 **Test Character**: Sihcom Repinuj (active, tracking)
