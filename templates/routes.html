@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Routes - Sihcom Toon Tracker{% endblock %}
+
+{% block content %}
+<div class="route-finder">
+    <div class="route-input-section">
+        <h2>Find Closest Characters</h2>
+        <div class="system-search-wrapper">
+            <input type="text" id="systemSearch" class="system-search-input"
+                   placeholder="Type a system name..." autocomplete="off">
+            <div class="system-dropdown" id="systemDropdown"></div>
+        </div>
+    </div>
+
+    <div class="route-results" id="routeResults" style="display: none;">
+        <h3 id="routeHeader">Distance to ...</h3>
+        <div class="route-list" id="routeList"></div>
+    </div>
+
+    <div class="route-loading" id="routeLoading" style="display: none;">
+        <div class="spinner"></div>
+        <span>Calculating routes...</span>
+    </div>
+
+    <div class="route-empty" id="routeEmpty" style="display: none;">
+        <p>No characters added yet.</p>
+        <p><a href="/settings">Add a character</a> to get started.</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    /* JS will be added in a later task */
+</script>
+{% endblock %}

@@ -19,6 +19,7 @@
             <div class="nav-links">
                 <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
                 <a href="{{ url_for('fits') }}" class="nav-link {% if request.endpoint == 'fits' %}active{% endif %}">Fit Checker</a>
+                <a href="{{ url_for('routes') }}" class="nav-link {% if request.endpoint == 'routes' %}active{% endif %}">Routes</a>
                 <a href="{{ url_for('settings') }}" class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}">Settings</a>
                 <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode" title="Toggle dark mode">
                     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

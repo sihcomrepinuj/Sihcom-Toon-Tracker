@@ -7,7 +7,7 @@ import urllib.request
 from sqlalchemy.orm import selectinload
 
 from config import Config
-from models import init_db, get_session, Character, Role, LocationCache, SavedFit, CharacterSkill, Notepad, Account
+from models import init_db, get_session, Character, Role, LocationCache, SavedFit, CharacterSkill, Notepad, Account, ROLE_PALETTE
 from auth import init_preston, get_authorization_url, authenticate
 from poller import poller
 from eft_parser import parse_eft_fit, extract_item_names
@@ -54,6 +54,12 @@ def fits():
     db_session.close()
 
     return render_template('fits.html', saved_fits=saved_fits)
+
+
+@app.route('/routes')
+def routes():
+    """Route finder page."""
+    return render_template('routes.html')
 
 
 @app.route('/settings')
@@ -171,7 +177,10 @@ def api_locations():
     """Get all character locations as JSON."""
     db_session = get_session()
 
-    characters = db_session.query(Character).options(selectinload(Character.account)).all()
+    characters = db_session.query(Character).options(
+        selectinload(Character.account),
+        selectinload(Character.roles),
+    ).all()
 
     data = []
     for char in characters:
@@ -182,7 +191,7 @@ def api_locations():
             'system': location.solar_system_name if location else 'Unknown',
             'ship': location.ship_name if location else 'Unknown',
             'online': location.is_online if location else False,
-            'roles': [role.name for role in char.roles],
+            'roles': [{'name': role.name, 'color': role.color} for role in char.roles],
             'portrait_url': f'https://images.evetech.net/characters/{char.id}/portrait?size=64',
             'last_updated': location.last_updated.isoformat() if location and location.last_updated else None,
             'corporation_id': char.corporation_id,
@@ -235,12 +244,18 @@ def api_create_role():
         db_session.close()
         return jsonify({'success': False, 'error': 'Role already exists'}), 400
 
-    role = Role(name=role_name)
+    # Auto-assign color from palette
+    role_count = db_session.query(Role).count()
+    color = ROLE_PALETTE[role_count % len(ROLE_PALETTE)]
+
+    role = Role(name=role_name, color=color)
     db_session.add(role)
     db_session.commit()
+
+    result = {'id': role.id, 'name': role.name, 'color': role.color}
     db_session.close()
 
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'role': result})
 
 
 @app.route('/api/roles/<int:role_id>', methods=['DELETE'])
@@ -259,6 +274,27 @@ def api_delete_role(role_id):
     db_session.close()
 
     return jsonify({'success': True})
+
+
+@app.route('/api/roles/<int:role_id>', methods=['PATCH'])
+def api_patch_role(role_id):
+    """Update a role's color."""
+    data = request.json or {}
+    db_session = get_session()
+
+    role = db_session.query(Role).filter_by(id=role_id).first()
+    if not role:
+        db_session.close()
+        return jsonify({'success': False, 'error': 'Role not found'}), 404
+
+    if 'color' in data:
+        role.color = data['color']
+
+    db_session.commit()
+    result = {'id': role.id, 'name': role.name, 'color': role.color}
+    db_session.close()
+
+    return jsonify({'success': True, 'role': result})
 
 
 @app.route('/api/characters/<int:character_id>/roles', methods=['POST'])
@@ -480,8 +516,8 @@ def api_check_fit():
         if not fit_requirements:
             return jsonify({'error': 'Could not determine skill requirements'}), 400
 
-        # Check all characters
-        results = skill_checker.check_all_characters(fit_requirements)
+        # Check all characters (includes injector math)
+        results = skill_checker.check_all_characters_with_injectors(fit_requirements)
 
         # Count how many can fly
         can_fly_count = sum(1 for r in results if r['can_fly'])
@@ -558,6 +594,46 @@ def api_get_saved_fit(fit_id):
     db_session.close()
 
     return jsonify(data)
+
+
+@app.route('/api/saved-fits/<int:fit_id>', methods=['PATCH'])
+def api_rename_saved_fit(fit_id):
+    """Rename a saved fit."""
+    data = request.json or {}
+    new_name = (data.get('name') or '').strip()
+
+    if not new_name:
+        return jsonify({'success': False, 'error': 'Name is required'}), 400
+
+    db_session = get_session()
+    saved_fit = db_session.query(SavedFit).filter_by(id=fit_id).first()
+
+    if not saved_fit:
+        db_session.close()
+        return jsonify({'success': False, 'error': 'Fit not found'}), 404
+
+    saved_fit.name = new_name
+    db_session.commit()
+    db_session.close()
+
+    return jsonify({'success': True, 'name': new_name})
+
+
+@app.route('/api/saved-fits/<int:fit_id>', methods=['DELETE'])
+def api_delete_saved_fit(fit_id):
+    """Delete a saved fit."""
+    db_session = get_session()
+    saved_fit = db_session.query(SavedFit).filter_by(id=fit_id).first()
+
+    if not saved_fit:
+        db_session.close()
+        return jsonify({'success': False, 'error': 'Fit not found'}), 404
+
+    db_session.delete(saved_fit)
+    db_session.commit()
+    db_session.close()
+
+    return jsonify({'success': True})
 
 
 # ============================================================================
