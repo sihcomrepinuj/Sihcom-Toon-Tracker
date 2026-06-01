@@ -714,6 +714,33 @@ def api_save_notepad():
 
 
 # ============================================================================
+# API ROUTES - Route Finder
+# ============================================================================
+
+@app.route('/api/systems')
+def api_search_systems():
+    """Search solar systems by name prefix for autocomplete."""
+    import sqlite3
+    query = request.args.get('q', '').strip()
+    if len(query) < 2:
+        return jsonify([])
+
+    try:
+        conn = sqlite3.connect(Config.SDE_DATABASE_PATH)
+        cursor = conn.execute(
+            "SELECT solarSystemID, solarSystemName FROM mapSolarSystems "
+            "WHERE solarSystemName LIKE ? COLLATE NOCASE ORDER BY solarSystemName LIMIT 10",
+            (query + '%',)
+        )
+        results = [{'id': row[0], 'name': row[1]} for row in cursor.fetchall()]
+        conn.close()
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Error searching systems: {e}", exc_info=True)
+        return jsonify([])
+
+
+# ============================================================================
 # APPLICATION STARTUP
 # ============================================================================
 
