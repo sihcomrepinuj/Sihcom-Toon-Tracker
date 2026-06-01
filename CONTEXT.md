@@ -221,12 +221,14 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 |-------|--------|---------|
 | `/` | GET | Dashboard |
 | `/fits` | GET | Fit checker page |
+| `/routes` | GET | Route finder page |
 | `/settings` | GET | Character & role management |
 | `/login` | GET | Initiates EVE SSO redirect |
 | `/callback` | GET | OAuth callback handler |
 | `/api/locations` | GET | All characters as JSON |
 | `/api/characters/<id>` | DELETE | Remove character |
 | `/api/roles` | POST | Create role |
+| `/api/roles/<id>` | PATCH | Update role color |
 | `/api/roles/<id>` | DELETE | Delete role |
 | `/api/characters/<id>/roles` | POST | Assign role |
 | `/api/characters/<id>/roles/<rid>` | DELETE | Remove role |
@@ -239,6 +241,8 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 | `/api/save-fit` | POST | Save fit |
 | `/api/saved-fits/<id>` | GET | Retrieve saved fit |
 | `/api/refresh-skills` | POST | Trigger skills poll |
+| `/api/systems` | GET | Search solar systems for autocomplete |
+| `/api/routes` | POST | Calculate jump distances to destination |
 
 ## Known Issues
 
@@ -261,34 +265,72 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 ### Completed (Session 4 — 2026-05-24)
 - ~~Organize characters by account (first-class `Account` entity, view toggle, account filter)~~ ✅
 
-### High Priority
-- Test the full OAuth flow end-to-end in Electron
+### Completed (Session 5 — 2026-05-26)
+- ~~Dark mode theme (CSS variables, toggle button, localStorage persistence)~~ ✅
+- ~~Notepad widget (floating panel, auto-save, backtick shortcut)~~ ✅
+- ~~Remove account filter chips from dashboard~~ ✅
+- ~~Replace Grouped/Loose text toggle with SVG icons~~ ✅
+- ~~Add Cards/Slim density toggle with icons~~ ✅
+- ~~Slim view rendering (portrait + online dot + name + system)~~ ✅
+
+### Completed (Session 5 continued — Fit Checker)
+- ~~Store `total_sp` per character (model + migration + poller)~~ ✅
+- ~~Injector math in `/api/check-fit` (diminishing returns per SP tier, skill rank from SDE)~~ ✅
+- ~~Expandable injector breakdown UI on saved fit chips (can fly / 1 inj / 2 inj / 3 inj / 4+ inj)~~ ✅
+- ~~Per-character injector count + missing SP shown in detailed results~~ ✅
+- Design doc: `docs/plans/2026-05-26-dashboard-and-fit-checker-design.md`
+
+### Completed (Session 6 — 2026-05-28)
+- ~~Colors for role tags (preset palette + user override via color picker in Settings)~~ ✅
+- ~~Horizontal card layout (portrait left, content right, wider grid columns)~~ ✅
+
+#### Tag Colors Implementation
+- Added `color` column to `Role` model (String, nullable) with idempotent migration + backfill
+- `ROLE_PALETTE` constant (10 colors) defined in `models.py`, auto-assigned on role creation
+- `PATCH /api/roles/<id>` endpoint to update a role's color
+- `/api/locations` now returns roles as `[{name, color}, ...]` instead of `[name, ...]`
+- Settings page: each role item has a clickable color dot — expands inline palette picker, PATCH on selection
+- Existing roles are backfilled with palette colors during migration
+- Settings character role chips show their color via `.colored` class (white text on role-color background)
+
+#### Tag Colors on Dashboard
+- **Cards**: colored left border (`border-left: 4px solid <color>`) using first role's color — no chips on cards
+- **Filter chips**: always show role color background via `--role-color` CSS custom property, dimmed at `opacity: 0.55` when inactive, full opacity on hover or when active
+- `.role-chip:hover` scoped with `:not(.filter-chip)` to prevent gray override on filter chips
+
+#### Horizontal Card Layout
+- Cards now use `flex-direction: row` with `position: relative` — portrait (64px) on the left, content on the right
+- Grid columns widened to `minmax(280px, 1fr)` from `minmax(200px, 1fr)`
+- New `.card-body` wrapper holds name, details, timestamp (no role chips on cards)
+- Left-aligned text throughout (name, timestamp)
+- Removed `.card-header` wrapper and `.card-account` section from cards
+
+### Completed (Session 7 — 2026-06-01)
+- ~~Subscription badge simplification (Omega/Alpha chip → small Greek symbols)~~ ✅
+- ~~Route Finder page ("who's closest to X?")~~ ✅
+
+#### Subscription Badge Change
+- Replaced yellow "OMEGA" chip and gray "ALPHA" chip with small inline Greek letter symbols
+- Omega: yellow Ω (`&#937;`), Alpha: gray Α (`&#913;`), Unknown: no symbol
+- Removed chip styling (background, border-radius, padding) — now just styled text
+
+#### Route Finder Implementation
+- **New `/routes` page** with nav link between "Fit Checker" and "Settings"
+- **`GET /api/systems?q=`** — autocomplete endpoint querying SDE `mapSolarSystems` table, case-insensitive prefix match, returns up to 10 results
+- **`POST /api/routes`** — accepts `{"destination_id": <system_id>}`, loads all characters + their `solar_system_id` from `LocationCache`, fires parallel `aiohttp` GET requests to ESI `GET /route/{origin}/{destination}/` (public endpoint, no auth), returns characters sorted by jump count ascending (nulls last)
+- **Frontend**: type-ahead search input with 250ms debounce, dropdown with arrow-key navigation, Enter to select. Results table shows rank, 32px portrait with online/offline dot, character name, current system, jump count (or "—" for unreachable)
+- **Edge cases**: characters already at destination get `jumps: 0`, characters with no location or ESI errors get `jumps: null` and sort to bottom, empty state if no characters added
+- Shortest route only (no secure/insecure toggle)
+- Design docs: `docs/plans/2026-05-31-route-finder-design.md`, `docs/plans/2026-06-01-route-finder-plan.md`
+
+### Future
 - Add an app icon to the Electron window and portable exe
-
-### Medium Features
-- Skill queue display on dashboard cards
-- Dark mode theme
-- Training plans in fit checker (show days to train missing skills)
-- Wallet balance display
-
-### Bigger Features
-- **Cyno chain / capital route planner** — use existing cyno-tagged characters to plan jump routes for titans, dreads, blops across the universe
-- Location history tracking
-- Movement alerts / desktop notifications
-
-### Packaging
 - Bundle Python via PyInstaller for a fully standalone exe (no Python install required)
-- Add auto-updater via electron-updater
-- Code signing for the exe
-
-### Code Quality
 - Encrypt tokens in database
-- Add type hints throughout Python code
-- Unit tests for auth flow
-- Extract ESI client into separate module
+- **Cyno chain / capital route planner** — use existing cyno-tagged characters to plan jump routes for titans, dreads, blops across the universe
 
 ---
 
-**Last Updated**: 2026-05-24
+**Last Updated**: 2026-06-01
 **Status**: Fully functional as Electron desktop app via `npm start`
 **Test Character**: Sihcom Repinuj (active, tracking)
