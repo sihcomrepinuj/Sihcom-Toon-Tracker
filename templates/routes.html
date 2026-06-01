@@ -32,6 +32,155 @@
 
 {% block scripts %}
 <script>
-    /* JS will be added in a later task */
+    const searchInput = document.getElementById('systemSearch');
+    const dropdown = document.getElementById('systemDropdown');
+    const routeResults = document.getElementById('routeResults');
+    const routeList = document.getElementById('routeList');
+    const routeHeader = document.getElementById('routeHeader');
+    const routeLoading = document.getElementById('routeLoading');
+    const routeEmpty = document.getElementById('routeEmpty');
+
+    let debounceTimer = null;
+    let selectedSystemId = null;
+    let selectedSystemName = '';
+    let highlightIndex = -1;
+
+    // Autocomplete: search as user types
+    searchInput.addEventListener('input', () => {
+        const query = searchInput.value.trim();
+        clearTimeout(debounceTimer);
+
+        if (query.length < 2) {
+            dropdown.innerHTML = '';
+            dropdown.style.display = 'none';
+            return;
+        }
+
+        debounceTimer = setTimeout(async () => {
+            try {
+                const resp = await fetch(`/api/systems?q=${encodeURIComponent(query)}`);
+                const systems = await resp.json();
+                renderDropdown(systems);
+            } catch (e) {
+                console.error('Autocomplete error:', e);
+            }
+        }, 250);
+    });
+
+    // Keyboard navigation for dropdown
+    searchInput.addEventListener('keydown', (e) => {
+        const options = dropdown.querySelectorAll('.system-option[data-id]');
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            highlightIndex = Math.min(highlightIndex + 1, options.length - 1);
+            updateHighlight(options);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            highlightIndex = Math.max(highlightIndex - 1, 0);
+            updateHighlight(options);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (highlightIndex >= 0 && options[highlightIndex]) {
+                options[highlightIndex].click();
+            } else if (options[0]) {
+                options[0].click();
+            }
+        } else if (e.key === 'Escape') {
+            dropdown.style.display = 'none';
+            highlightIndex = -1;
+        }
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.system-search-wrapper')) {
+            dropdown.style.display = 'none';
+        }
+    });
+
+    function updateHighlight(options) {
+        options.forEach((opt, i) => {
+            opt.classList.toggle('highlighted', i === highlightIndex);
+        });
+    }
+
+    function renderDropdown(systems) {
+        highlightIndex = -1;
+
+        if (!systems.length) {
+            dropdown.innerHTML = '<div class="system-option no-results">No systems found</div>';
+            dropdown.style.display = 'block';
+            return;
+        }
+
+        dropdown.innerHTML = systems.map(s =>
+            `<div class="system-option" data-id="${s.id}" data-name="${s.name}">${s.name}</div>`
+        ).join('');
+        dropdown.style.display = 'block';
+
+        dropdown.querySelectorAll('.system-option[data-id]').forEach(opt => {
+            opt.addEventListener('click', () => {
+                selectedSystemId = parseInt(opt.dataset.id);
+                selectedSystemName = opt.dataset.name;
+                searchInput.value = selectedSystemName;
+                dropdown.style.display = 'none';
+                calculateRoutes();
+            });
+        });
+    }
+
+    async function calculateRoutes() {
+        if (!selectedSystemId) return;
+
+        routeResults.style.display = 'none';
+        routeEmpty.style.display = 'none';
+        routeLoading.style.display = 'flex';
+
+        try {
+            const resp = await fetch('/api/routes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ destination_id: selectedSystemId })
+            });
+            const data = await resp.json();
+
+            routeLoading.style.display = 'none';
+
+            if (data.empty) {
+                routeEmpty.style.display = 'block';
+                return;
+            }
+
+            routeHeader.textContent = `Distance to ${selectedSystemName}`;
+            renderResults(data.results);
+            routeResults.style.display = 'block';
+
+        } catch (e) {
+            console.error('Route calculation error:', e);
+            routeLoading.style.display = 'none';
+        }
+    }
+
+    function renderResults(results) {
+        routeList.innerHTML = results.map((r, i) => {
+            const dotClass = r.online ? 'online' : 'offline';
+            const jumpsText = r.jumps !== null ? r.jumps : '—';
+            const jumpsUnit = r.jumps !== null ? (r.jumps === 1 ? 'jump' : 'jumps') : '';
+
+            return `
+                <div class="route-row">
+                    <span class="route-rank">${i + 1}</span>
+                    <div class="route-portrait">
+                        <img src="${r.portrait_url}" class="small-portrait" alt="">
+                        <span class="status-dot ${dotClass}"></span>
+                    </div>
+                    <span class="route-name">${r.name}</span>
+                    <span class="route-system">${r.system_name}</span>
+                    <span class="route-jumps">${jumpsText} <small>${jumpsUnit}</small></span>
+                </div>
+            `;
+        }).join('');
+    }
 </script>
 {% endblock %}
