@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from datetime import datetime
 import asyncio
+import aiohttp
 import json
 import logging
 import urllib.request
@@ -738,6 +739,69 @@ def api_search_systems():
     except Exception as e:
         logger.error(f"Error searching systems: {e}", exc_info=True)
         return jsonify([])
+
+
+@app.route('/api/routes', methods=['POST'])
+def api_calculate_routes():
+    """Calculate jump distance from all characters to a destination system."""
+    data = request.json or {}
+    destination_id = data.get('destination_id')
+
+    if not destination_id:
+        return jsonify({'error': 'destination_id is required'}), 400
+
+    db_session = get_session()
+    characters = db_session.query(Character).all()
+
+    if not characters:
+        db_session.close()
+        return jsonify({'results': [], 'empty': True})
+
+    # Build list of characters with their current system
+    char_data = []
+    for char in characters:
+        location = char.location
+        char_data.append({
+            'id': char.id,
+            'name': char.name,
+            'system_id': location.solar_system_id if location else None,
+            'system_name': location.solar_system_name if location else 'Unknown',
+            'online': location.is_online if location else False,
+            'portrait_url': f'https://images.evetech.net/characters/{char.id}/portrait?size=64',
+        })
+    db_session.close()
+
+    # Calculate routes in parallel via asyncio
+    async def fetch_routes():
+        async with aiohttp.ClientSession() as http_session:
+            tasks = []
+            for c in char_data:
+                tasks.append(get_route(http_session, c, destination_id))
+            return await asyncio.gather(*tasks)
+
+    async def get_route(http_session, char_info, dest_id):
+        origin_id = char_info['system_id']
+        if origin_id is None:
+            return {**char_info, 'jumps': None}
+        if origin_id == dest_id:
+            return {**char_info, 'jumps': 0}
+        try:
+            url = f'https://esi.evetech.net/latest/route/{origin_id}/{dest_id}/'
+            async with http_session.get(url) as resp:
+                if resp.status == 200:
+                    route = await resp.json()
+                    return {**char_info, 'jumps': len(route) - 1}
+                else:
+                    return {**char_info, 'jumps': None}
+        except Exception:
+            return {**char_info, 'jumps': None}
+
+    results = asyncio.run(fetch_routes())
+
+    # Sort: by jumps ascending, None values at the end
+    results = sorted(results, key=lambda r: (r['jumps'] is None, r['jumps'] or 0))
+
+    return jsonify({'results': results})
 
 
 # ============================================================================
