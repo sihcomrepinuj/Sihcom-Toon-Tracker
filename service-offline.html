@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Service Offline — Toon Tracker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .card {
+      text-align: center;
+      max-width: 480px;
+      padding: 2.5rem 2rem;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+    }
+
+    .icon {
+      font-size: 3rem;
+      margin-bottom: 1.25rem;
+      color: #e05050;
+    }
+
+    h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #e05050;
+      margin-bottom: 0.75rem;
+    }
+
+    p {
+      line-height: 1.6;
+      color: #8b949e;
+      margin-bottom: 0.5rem;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin: 1.25rem 0;
+      font-size: 0.85rem;
+      color: #8b949e;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #e05050;
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    button {
+      margin-top: 1.25rem;
+      padding: 0.55rem 1.4rem;
+      background: #1f6feb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+
+    button:hover { background: #388bfd; }
+
+    .hint {
+      margin-top: 1.5rem;
+      font-size: 0.8rem;
+      color: #484f58;
+      line-height: 1.7;
+    }
+
+    code {
+      font-family: 'Consolas', 'Courier New', monospace;
+      background: #0d1117;
+      padding: 0.1em 0.4em;
+      border-radius: 3px;
+      font-size: 0.85em;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">&#9888;</div>
+    <h2>Toon Tracker Service Not Running</h2>
+    <p>The background service is not reachable on port 5000.</p>
+    <p>Start <code>ToonTracker-Service.exe</code> then this window will connect automatically.</p>
+
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="status-text">Waiting for service&hellip;</span>
+    </div>
+
+    <br>
+    <button onclick="check()">Retry Now</button>
+
+    <p class="hint">
+      To start at Windows login, run <code>startup\install-startup.ps1</code><br>
+      from an Administrator PowerShell prompt.
+    </p>
+  </div>
+
+  <script>
+    const SERVICE_URL = 'http://127.0.0.1:5000';
+
+    function check() {
+      fetch(SERVICE_URL + '/api/health')
+        .then(r => {
+          if (r.ok) {
+            document.getElementById('dot').style.background = '#3fb950';
+            document.getElementById('status-text').textContent = 'Connected! Loading…';
+            window.location.href = SERVICE_URL;
+          }
+        })
+        .catch(() => {});
+    }
+
+    // Auto-retry every 3 seconds
+    setInterval(check, 3000);
+  </script>
+</body>
+</html>

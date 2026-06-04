@@ -713,6 +713,11 @@ def api_save_notepad():
     return jsonify({'success': True})
 
 
+@app.route('/api/health')
+def api_health():
+    return jsonify({'status': 'ok', 'service': 'toon-tracker'})
+
+
 # ============================================================================
 # API ROUTES - Route Finder
 # ============================================================================

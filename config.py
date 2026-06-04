@@ -1,7 +1,16 @@
 import os
+import sys
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# When frozen by PyInstaller, resolve paths relative to the exe's directory.
+# In dev, use the repo root (where this file lives).
+_exe_dir = (
+    os.path.dirname(sys.executable)
+    if getattr(sys, 'frozen', False)
+    else os.path.dirname(os.path.abspath(__file__))
+)
 
 class Config:
     """Application configuration loaded from environment variables."""
@@ -12,8 +21,18 @@ class Config:
     # EVE SSO settings
     EVE_CLIENT_ID = os.getenv('EVE_CLIENT_ID')
     EVE_CLIENT_SECRET = os.getenv('EVE_CLIENT_SECRET')
-    EVE_CALLBACK_URL = os.getenv('EVE_CALLBACK_URL', 'http://localhost:5000/callback')
 
+    # Background service port — must match the EVE developer portal callback URL.
+    SERVICE_PORT = int(os.getenv('SERVICE_PORT', '5000'))
+
+    EVE_CALLBACK_URL = os.getenv(
+        'EVE_CALLBACK_URL',
+        f'http://localhost:{int(os.getenv("SERVICE_PORT", "5000"))}/callback',
+    )
+
+    # Database settings — absolute paths so they work from any working directory.
+    DATABASE_PATH = os.getenv('DATABASE_PATH', os.path.join(_exe_dir, 'tracker.db'))
+    SDE_DATABASE_PATH = os.getenv('SDE_DATABASE_PATH', os.path.join(_exe_dir, 'sde.sqlite.db'))
     # Database settings
     DATABASE_PATH = 'tracker.db'
     # SDE built from CCP's official YAML export via setup_sde.py
