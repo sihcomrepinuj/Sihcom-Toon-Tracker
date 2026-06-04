@@ -1,7 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from datetime import datetime
 import asyncio
-import aiohttp
 import json
 import logging
 import urllib.request
@@ -741,6 +740,43 @@ def api_search_systems():
         return jsonify([])
 
 
+jump_graph = None
+
+
+def _load_jump_graph():
+    """Load the solar system adjacency graph from the SDE (cached after first call)."""
+    global jump_graph
+    if jump_graph is not None:
+        return jump_graph
+    import sqlite3
+    conn = sqlite3.connect(Config.SDE_DATABASE_PATH)
+    rows = conn.execute('SELECT fromSolarSystemID, toSolarSystemID FROM mapSolarSystemJumps').fetchall()
+    conn.close()
+    graph = {}
+    for a, b in rows:
+        graph.setdefault(a, []).append(b)
+    jump_graph = graph
+    return graph
+
+
+def _bfs_jumps(graph, origin, destination):
+    """BFS shortest-path jump count between two solar systems."""
+    if origin == destination:
+        return 0
+    from collections import deque
+    visited = {origin}
+    queue = deque([(origin, 0)])
+    while queue:
+        node, dist = queue.popleft()
+        for neighbor in graph.get(node, []):
+            if neighbor == destination:
+                return dist + 1
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append((neighbor, dist + 1))
+    return None
+
+
 @app.route('/api/routes', methods=['POST'])
 def api_calculate_routes():
     """Calculate jump distance from all characters to a destination system."""
@@ -757,49 +793,25 @@ def api_calculate_routes():
         db_session.close()
         return jsonify({'results': [], 'empty': True})
 
-    # Build list of characters with their current system
-    char_data = []
+    graph = _load_jump_graph()
+
+    results = []
     for char in characters:
         location = char.location
-        char_data.append({
+        origin_id = location.solar_system_id if location else None
+        jumps = _bfs_jumps(graph, origin_id, destination_id) if origin_id else None
+        results.append({
             'id': char.id,
             'name': char.name,
-            'system_id': location.solar_system_id if location else None,
+            'system_id': origin_id,
             'system_name': location.solar_system_name if location else 'Unknown',
             'online': location.is_online if location else False,
             'portrait_url': f'https://images.evetech.net/characters/{char.id}/portrait?size=64',
+            'jumps': jumps,
         })
     db_session.close()
 
-    # Calculate routes in parallel via asyncio
-    async def fetch_routes():
-        async with aiohttp.ClientSession() as http_session:
-            tasks = []
-            for c in char_data:
-                tasks.append(get_route(http_session, c, destination_id))
-            return await asyncio.gather(*tasks)
-
-    async def get_route(http_session, char_info, dest_id):
-        origin_id = char_info['system_id']
-        if origin_id is None:
-            return {**char_info, 'jumps': None}
-        if origin_id == dest_id:
-            return {**char_info, 'jumps': 0}
-        try:
-            url = f'https://esi.evetech.net/latest/route/{origin_id}/{dest_id}/'
-            async with http_session.get(url) as resp:
-                if resp.status == 200:
-                    route = await resp.json()
-                    return {**char_info, 'jumps': len(route) - 1}
-                else:
-                    return {**char_info, 'jumps': None}
-        except Exception:
-            return {**char_info, 'jumps': None}
-
-    results = asyncio.run(fetch_routes())
-
-    # Sort: by jumps ascending, None values at the end
-    results = sorted(results, key=lambda r: (r['jumps'] is None, r['jumps'] or 0))
+    results.sort(key=lambda r: (r['jumps'] is None, r['jumps'] or 0))
 
     return jsonify({'results': results})
 
@@ -818,6 +830,16 @@ def startup():
     except ValueError as e:
         logger.error(f"Configuration error: {e}")
         logger.error("Please set EVE_CLIENT_ID and EVE_CLIENT_SECRET in your .env file")
+        return False
+
+    # Check the SDE is present (fit checker + route finder depend on it).
+    # We don't auto-build it here — converting CCP's YAML SDE downloads
+    # ~200 MB and needs several minutes and ~2 GB RAM, which is a poor fit
+    # for app startup. Point the user at setup_sde.py instead.
+    import os
+    if not os.path.exists(Config.SDE_DATABASE_PATH):
+        logger.error(f"SDE database not found at {Config.SDE_DATABASE_PATH}")
+        logger.error("Run 'python setup_sde.py' to download and build it from CCP's official SDE.")
         return False
 
     # Initialize database

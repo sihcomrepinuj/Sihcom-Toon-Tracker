@@ -3,8 +3,21 @@
 
 # Database files
 tracker.db
+tracker.db.bak-*
 sde.sqlite
 sde.sqlite.db
+
+# SDE built by setup_sde.py (CCP YAML -> SQLite). Not committed — each
+# clone runs `python setup_sde.py` to build its own copy.
+data/sqlite-latest.sqlite
+data/sde-build.txt
+
+# eve-sde-converter intermediate build artifacts (submodule working files)
+tools/eve-sde-converter/sde/
+tools/eve-sde-converter/sdeoutput/
+tools/eve-sde-converter/eve.db
+tools/eve-sde-converter/sdeloader.cfg
+tools/eve-sde-converter/*.zip
 
 # Python
 __pycache__/

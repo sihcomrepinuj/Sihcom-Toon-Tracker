@@ -4,3 +4,8 @@ aiohttp
 sqlalchemy
 python-dotenv
 pytest
+
+# Used by setup_sde.py to download CCP's YAML SDE and run the
+# eve-sde-converter subprocess that builds the SQLite database.
+requests
+pyyaml

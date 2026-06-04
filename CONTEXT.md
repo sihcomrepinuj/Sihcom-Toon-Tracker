@@ -176,7 +176,8 @@ Produces `dist/EVE-Character-Tracker.exe`.
 **Required:**
 - Python 3.14 (installed at `C:\Python314\python.exe`)
 - Node.js LTS (for `npm start` / `npm run build`)
-- Python packages: `flask`, `preston`, `aiohttp`, `sqlalchemy`, `python-dotenv`
+- Python packages: `flask`, `preston`, `aiohttp` (poller only), `sqlalchemy`, `python-dotenv`, `requests` + `pyyaml` (SDE build only)
+- SDE: run `python setup_sde.py` once to build `data/sqlite-latest.sqlite` from CCP's YAML SDE (see Session 9)
 
 **`.env` file:**
 ```env
@@ -209,7 +210,7 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 - Corporation fetch uses public ESI endpoint (no auth), so it works even if tokens are expired
 
 ### Database Models (`models.py`)
-- **Character**: ID, name, tokens, expiry, corporation_id, account_id (nullable FK)
+- **Character**: ID, name, tokens, expiry, corporation_id, account_id (nullable FK). `location` and `skills` relationships use `cascade='all, delete-orphan'` so deleting a character cleans up related rows.
 - **Account**: First-class entity (name, subscription, notes). Nullable FK from Character (ON DELETE SET NULL).
 - **Role**: Custom tags (Capital, Cyno, Scout, etc.)
 - **LocationCache**: Cached location/ship/online status
@@ -309,6 +310,11 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 - ~~Subscription badge simplification (Omega/Alpha chip → small Greek symbols)~~ ✅
 - ~~Route Finder page ("who's closest to X?")~~ ✅
 
+### Completed (Session 8 — 2026-06-01)
+- ~~Fix character deletion crash (cascade delete on LocationCache + CharacterSkill)~~ ✅
+- ~~Fix routes search input not auto-focused on page load~~ ✅
+- ~~Replace ESI HTTP route calls with local BFS on SDE jump graph (~86ms vs seconds)~~ ✅
+
 #### Subscription Badge Change
 - Replaced yellow "OMEGA" chip and gray "ALPHA" chip with small inline Greek letter symbols
 - Omega: yellow Ω (`&#937;`), Alpha: gray Α (`&#913;`), Unknown: no symbol
@@ -317,11 +323,29 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 #### Route Finder Implementation
 - **New `/routes` page** with nav link between "Fit Checker" and "Settings"
 - **`GET /api/systems?q=`** — autocomplete endpoint querying SDE `mapSolarSystems` table, case-insensitive prefix match, returns up to 10 results
-- **`POST /api/routes`** — accepts `{"destination_id": <system_id>}`, loads all characters + their `solar_system_id` from `LocationCache`, fires parallel `aiohttp` GET requests to ESI `GET /route/{origin}/{destination}/` (public endpoint, no auth), returns characters sorted by jump count ascending (nulls last)
-- **Frontend**: type-ahead search input with 250ms debounce, dropdown with arrow-key navigation, Enter to select. Results table shows rank, 32px portrait with online/offline dot, character name, current system, jump count (or "—" for unreachable)
-- **Edge cases**: characters already at destination get `jumps: 0`, characters with no location or ESI errors get `jumps: null` and sort to bottom, empty state if no characters added
+- **`POST /api/routes`** — accepts `{"destination_id": <system_id>}`, loads all characters + their `solar_system_id` from `LocationCache`, calculates jump counts via BFS on the SDE `mapSolarSystemJumps` gate graph (loaded once and cached in memory), returns characters sorted by jump count ascending (nulls last). ~86ms for 35 characters vs seconds of ESI calls.
+- **Frontend**: type-ahead search input (autofocused) with 250ms debounce, dropdown with arrow-key navigation, Enter to select. Results table shows rank, 32px portrait with online/offline dot, character name, current system, jump count (or "—" for unreachable)
+- **Edge cases**: characters already at destination get `jumps: 0`, characters with no location get `jumps: null` and sort to bottom, empty state if no characters added
 - Shortest route only (no secure/insecure toggle)
 - Design docs: `docs/plans/2026-05-31-route-finder-design.md`, `docs/plans/2026-06-01-route-finder-plan.md`
+
+### Completed (Session 9 — 2026-06-03)
+- ~~Add `.env.example` template (colleague feedback)~~ ✅
+- ~~Replace Fuzzwork SDE with CCP's official YAML SDE built via `setup_sde.py`~~ ✅
+
+#### `.env.example`
+- Added `.env.example` documenting the four required vars (`EVE_CLIENT_ID`, `EVE_CLIENT_SECRET`, `FLASK_SECRET_KEY`, `EVE_CALLBACK_URL`) with inline comments and a `secrets.token_hex(32)` hint for the Flask key. The README already referenced `cp .env.example .env`; the file just didn't exist.
+
+#### SDE from CCP (was Fuzzwork)
+Colleague feedback: stop using the third-party Fuzzwork SDE; pull from the source. Mirrors the approach in the sibling `Sihcom Inventory and Industry` project.
+- **`setup_sde.py`** (new) — downloads CCP's official YAML SDE from `https://developers.eveonline.com/static-data/tranquility`, converts it to SQLite via the `noirsoldats/eve-sde-converter` submodule, installs to `data/sqlite-latest.sqlite`, and verifies the app's tables. Run `python setup_sde.py` (re-run after major patches).
+- **`tools/eve-sde-converter`** — added as a git submodule, pinned to `f1f03f3` (same SHA as the Inventory project). `setup_sde.py` bootstraps it via submodule init or a pinned tarball fallback if missing.
+- **Schema is unchanged** — the converter produces the classic SDE schema (`invTypes`, `dgmTypeAttributes`, `mapSolarSystems`, `mapSolarSystemJumps`) with identical column names, so `skill_checker.py` and `app.py` queries needed **no changes**.
+- **`config.py`** — `SDE_DATABASE_PATH` now points at `data/sqlite-latest.sqlite` (absolute path) instead of `sde.sqlite.db` in the root.
+- **`app.py`** — `startup()` now fails fast with a "run setup_sde.py" message if the SDE is absent (no silent multi-minute conversion during Electron boot).
+- **`requirements.txt`** — added `requests` and `pyyaml` (used by `setup_sde.py` / the converter subprocess).
+- **`.gitignore`** — ignores `data/sqlite-latest.sqlite`, `data/sde-build.txt`, and the converter's intermediate build artifacts.
+- **README** — replaced the "Download SDE from Fuzzwork" section with `python setup_sde.py` instructions; updated prerequisites (git), project structure, troubleshooting, and credits.
 
 ### Future
 - Add an app icon to the Electron window and portable exe
@@ -331,6 +355,6 @@ The EVE SSO callback URL is registered as `http://localhost:5000/callback` at CC
 
 ---
 
-**Last Updated**: 2026-06-01
+**Last Updated**: 2026-06-03
 **Status**: Fully functional as Electron desktop app via `npm start`
 **Test Character**: Sihcom Repinuj (active, tracking)

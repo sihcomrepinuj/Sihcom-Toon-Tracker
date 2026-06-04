@@ -16,7 +16,11 @@ class Config:
 
     # Database settings
     DATABASE_PATH = 'tracker.db'
-    SDE_DATABASE_PATH = 'sde.sqlite.db'
+    # SDE built from CCP's official YAML export via setup_sde.py
+    # (tools/eve-sde-converter). Run `python setup_sde.py` to create it.
+    SDE_DATABASE_PATH = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'data', 'sqlite-latest.sqlite'
+    )
 
     # OAuth scopes required
     EVE_SCOPES = [

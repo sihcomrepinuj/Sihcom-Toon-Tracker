@@ -17,9 +17,20 @@
         {% if saved_fits %}
         <div class="saved-fits">
             <h3>Saved Fits</h3>
-            <div class="saved-fits-list">
+            <div class="saved-fits-list" id="savedFitsList">
                 {% for fit in saved_fits %}
-                    <button class="saved-fit-chip" data-fit-id="{{ fit.id }}">{{ fit.name }}</button>
+                    <div class="saved-fit-item" data-fit-id="{{ fit.id }}">
+                        <div class="saved-fit-row">
+                            <button class="saved-fit-chip" type="button">{{ fit.name }}</button>
+                            <button class="fit-action-btn fit-rename-btn" type="button" title="Rename">
+                                <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 14.375V17.5h3.125L14.06 9.065l-3.125-3.125L2.5 14.375zM16.41 6.715a.83.83 0 000-1.175l-1.95-1.95a.83.83 0 00-1.175 0l-1.525 1.525 3.125 3.125 1.525-1.525z"/></svg>
+                            </button>
+                            <button class="fit-action-btn fit-delete-btn" type="button" title="Delete">
+                                <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M5 15.833a1.667 1.667 0 001.667 1.667h6.666A1.667 1.667 0 0015 15.833v-10H5v10zM15.833 4.167h-3.75L11.25 3.333H8.75l-.833.834H4.167V5.833h11.666V4.167z"/></svg>
+                            </button>
+                        </div>
+                        <div class="injector-breakdown" style="display: none;"></div>
+                    </div>
                 {% endfor %}
             </div>
         </div>
@@ -45,6 +56,7 @@
 {% block scripts %}
 <script>
     let currentFitText = '';
+    let expandedFitId = null;
 
     // Check fit form submission
     document.getElementById('fitForm').addEventListener('submit', async (e) => {
@@ -101,24 +113,183 @@
         }
     });
 
-    // Load saved fit
-    document.querySelectorAll('.saved-fit-chip').forEach(chip => {
-        chip.addEventListener('click', async () => {
-            const fitId = chip.dataset.fitId;
+    // Rename fit
+    document.getElementById('savedFitsList')?.addEventListener('click', async (e) => {
+        const renameBtn = e.target.closest('.fit-rename-btn');
+        if (renameBtn) {
+            e.stopPropagation();
+            const item = renameBtn.closest('.saved-fit-item');
+            const fitId = item.dataset.fitId;
+            const chip = item.querySelector('.saved-fit-chip');
 
-            try {
-                const response = await fetch(`/api/saved-fits/${fitId}`);
-                const data = await response.json();
+            // Already editing — don't double-up
+            if (item.querySelector('.fit-rename-input')) return;
 
-                if (data.eft_text) {
-                    document.getElementById('fitText').value = data.eft_text;
-                    document.getElementById('fitForm').dispatchEvent(new Event('submit'));
+            const currentName = chip.textContent.trim();
+            chip.style.display = 'none';
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'fit-rename-input';
+            input.value = currentName;
+            chip.parentElement.insertBefore(input, chip);
+            input.focus();
+            input.select();
+
+            async function commitRename() {
+                const newName = input.value.trim();
+                if (newName && newName !== currentName) {
+                    try {
+                        const resp = await fetch(`/api/saved-fits/${fitId}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: newName })
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            chip.textContent = data.name;
+                        }
+                    } catch (err) {
+                        console.error('Error renaming fit:', err);
+                    }
                 }
-            } catch (error) {
-                console.error('Error loading fit:', error);
+                input.remove();
+                chip.style.display = '';
             }
+
+            input.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') { ev.preventDefault(); commitRename(); }
+                if (ev.key === 'Escape') { input.remove(); chip.style.display = ''; }
+            });
+            input.addEventListener('blur', commitRename);
+            return;
+        }
+
+        // Delete fit
+        const deleteBtn = e.target.closest('.fit-delete-btn');
+        if (deleteBtn) {
+            e.stopPropagation();
+            const item = deleteBtn.closest('.saved-fit-item');
+            const fitId = item.dataset.fitId;
+            const chip = item.querySelector('.saved-fit-chip');
+            if (!confirm(`Delete "${chip.textContent.trim()}"?`)) return;
+            try {
+                const resp = await fetch(`/api/saved-fits/${fitId}`, { method: 'DELETE' });
+                const data = await resp.json();
+                if (data.success) {
+                    item.remove();
+                    // Hide saved fits section if none left
+                    const list = document.getElementById('savedFitsList');
+                    if (list && !list.children.length) {
+                        list.closest('.saved-fits')?.remove();
+                    }
+                }
+            } catch (err) {
+                console.error('Error deleting fit:', err);
+            }
+            return;
+        }
+
+        // Saved fit chip click — load into textarea + expand injector breakdown
+        const chip = e.target.closest('.saved-fit-chip');
+        if (!chip) return;
+
+        const item = chip.closest('.saved-fit-item');
+        const fitId = item.dataset.fitId;
+        const breakdown = item.querySelector('.injector-breakdown');
+
+        // If already expanded, collapse it
+        if (expandedFitId === fitId) {
+            breakdown.style.display = 'none';
+            expandedFitId = null;
+            return;
+        }
+
+        // Collapse any other expanded breakdown
+        document.querySelectorAll('.injector-breakdown').forEach(bd => {
+            bd.style.display = 'none';
         });
+
+        // Show loading state
+        breakdown.innerHTML = '<div class="injector-loading">Checking fit...</div>';
+        breakdown.style.display = 'block';
+        expandedFitId = fitId;
+
+        try {
+            // Fetch the fit text
+            const fitResp = await fetch(`/api/saved-fits/${fitId}`);
+            const fitData = await fitResp.json();
+
+            if (!fitData.eft_text) {
+                breakdown.innerHTML = '<div class="injector-error">Could not load fit.</div>';
+                return;
+            }
+
+            // Load into textarea
+            document.getElementById('fitText').value = fitData.eft_text;
+            currentFitText = fitData.eft_text;
+
+            // Check the fit
+            const checkResp = await fetch('/api/check-fit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fit_text: fitData.eft_text })
+            });
+
+            const checkData = await checkResp.json();
+
+            if (checkData.error) {
+                breakdown.innerHTML = `<div class="injector-error">${checkData.error}</div>`;
+                return;
+            }
+
+            // Display results in the main panel too
+            displayResults(checkData);
+
+            // Build injector breakdown
+            renderInjectorBreakdown(breakdown, checkData.results);
+
+        } catch (error) {
+            console.error('Error checking saved fit:', error);
+            breakdown.innerHTML = '<div class="injector-error">Error checking fit.</div>';
+        }
     });
+
+    function renderInjectorBreakdown(container, results) {
+        // Bucket characters by injector count
+        let canFly = 0;
+        let inj1 = 0;
+        let inj2 = 0;
+        let inj3 = 0;
+        let inj4plus = 0;
+
+        for (const r of results) {
+            if (r.can_fly) {
+                canFly++;
+            } else {
+                const n = r.injectors_needed || 0;
+                if (n === 1) inj1++;
+                else if (n === 2) inj2++;
+                else if (n === 3) inj3++;
+                else inj4plus++;
+            }
+        }
+
+        const rows = [
+            { label: 'Can fly now', count: canFly, cls: 'inj-fly' },
+            { label: '1 injector away', count: inj1, cls: 'inj-1' },
+            { label: '2 injectors away', count: inj2, cls: 'inj-2' },
+            { label: '3 injectors away', count: inj3, cls: 'inj-3' },
+            { label: '4+ injectors', count: inj4plus, cls: 'inj-4plus' },
+        ];
+
+        container.innerHTML = rows.map(r => `
+            <div class="injector-row ${r.cls}">
+                <span class="injector-count">${r.count}</span>
+                <span class="injector-label">${r.label}</span>
+            </div>
+        `).join('');
+    }
 
     function displayResults(data) {
         const resultsDiv = document.getElementById('fitResults');
@@ -136,6 +307,14 @@
             let skillsDisplay = `All ${result.total_skills}/${result.total_skills} skills met`;
             if (!result.can_fly) {
                 skillsDisplay = `${result.met_skills}/${result.total_skills}`;
+            }
+
+            // Injector info for characters who can't fly
+            let injectorInfo = '';
+            if (!result.can_fly && result.injectors_needed !== undefined) {
+                const n = result.injectors_needed;
+                const spFormatted = (result.missing_sp || 0).toLocaleString();
+                injectorInfo = `<span class="result-injectors">${n} inj · ${spFormatted} SP</span>`;
             }
 
             let missingSkillsHtml = '';
@@ -157,8 +336,9 @@
                     <div class="result-header" onclick="toggleMissingSkills(this)">
                         <span class="result-icon">${icon}</span>
                         <span class="result-name">${result.character_name}</span>
+                        ${injectorInfo}
                         <span class="result-skills">${skillsDisplay}</span>
-                        ${!result.can_fly ? '<span class="expand-toggle">▶ expand</span>' : ''}
+                        ${!result.can_fly ? '<span class="expand-toggle">▶ details</span>' : ''}
                     </div>
                     ${missingSkillsHtml}
                 </div>
@@ -177,7 +357,7 @@
         if (missingSkills && toggle) {
             const isVisible = missingSkills.style.display === 'block';
             missingSkills.style.display = isVisible ? 'none' : 'block';
-            toggle.textContent = isVisible ? '▶ expand' : '▼ collapse';
+            toggle.textContent = isVisible ? '▶ details' : '▼ collapse';
         }
     }
 </script>

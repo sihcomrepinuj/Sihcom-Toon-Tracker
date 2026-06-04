@@ -25,7 +25,8 @@
                 </div>
                 <div class="character-manage-roles">
                     {% for role in char.roles %}
-                        <span class="role-chip">
+                        <span class="role-chip{% if role.color %} colored{% endif %}"
+                              {% if role.color %}style="background-color: {{ role.color }}"{% endif %}>
                             {{ role.name }}
                             <button class="role-remove" onclick="removeCharacterRole({{ char.id }}, {{ role.id }})">&times;</button>
                         </span>
@@ -100,8 +101,15 @@
         {% if roles %}
         <div class="roles-list">
             {% for role in roles %}
-            <div class="role-item">
-                <span>{{ role.name }}</span>
+            <div class="role-item" data-role-id="{{ role.id }}">
+                <div class="role-item-left">
+                    <button class="role-color-dot" type="button"
+                            style="background-color: {{ role.color or '#607D8B' }}"
+                            onclick="toggleColorPicker(this)"
+                            title="Change color"></button>
+                    <span>{{ role.name }}</span>
+                </div>
+                <div class="role-color-picker" style="display: none;"></div>
                 <button class="btn btn-danger btn-small" onclick="deleteRole({{ role.id }})">Delete</button>
             </div>
             {% endfor %}
@@ -165,6 +173,47 @@
             alert('Error creating role');
         }
     });
+
+    // Color palette (must match ROLE_PALETTE in models.py)
+    const PALETTE = ['#5865F2','#ED4245','#3BA55C','#FAA61A','#9B59B6','#E91E8C','#1ABC9C','#E67E22','#607D8B','#3498DB'];
+
+    function toggleColorPicker(dotBtn) {
+        const item = dotBtn.closest('.role-item');
+        const picker = item.querySelector('.role-color-picker');
+
+        // Close all other pickers
+        document.querySelectorAll('.role-color-picker').forEach(p => {
+            if (p !== picker) p.style.display = 'none';
+        });
+
+        if (picker.style.display === 'none') {
+            const roleId = item.dataset.roleId;
+            picker.innerHTML = PALETTE.map(c =>
+                `<button type="button" class="color-swatch" style="background-color:${c}" onclick="setRoleColor(${roleId}, '${c}', this)"></button>`
+            ).join('');
+            picker.style.display = 'flex';
+        } else {
+            picker.style.display = 'none';
+        }
+    }
+
+    async function setRoleColor(roleId, color, swatchBtn) {
+        try {
+            const resp = await fetch(`/api/roles/${roleId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ color })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                const item = swatchBtn.closest('.role-item');
+                item.querySelector('.role-color-dot').style.backgroundColor = color;
+                item.querySelector('.role-color-picker').style.display = 'none';
+            }
+        } catch (err) {
+            console.error('Error updating role color:', err);
+        }
+    }
 
     // Delete role
     async function deleteRole(roleId) {

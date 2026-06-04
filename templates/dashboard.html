@@ -8,22 +8,33 @@
         <div class="role-filters" id="roleFilters">
             {% if roles %}
                 {% for role in roles %}
-                    <button class="role-chip filter-chip" data-role="{{ role.name }}">{{ role.name }}</button>
+                    <button class="role-chip filter-chip" data-role="{{ role.name }}"
+                            style="--role-color: {{ role.color or '#607D8B' }}">{{ role.name }}</button>
                 {% endfor %}
             {% endif %}
-        </div>
-        <div class="account-filters" id="accountFilters">
-            <button class="account-chip filter-chip active" data-account-filter="all" type="button">All</button>
-            <button class="account-chip filter-chip" data-account-filter="unassigned" type="button">Unassigned</button>
-            {# Account-specific chips are injected by JS once /api/locations is fetched #}
         </div>
         <div class="search-bar">
             <input type="text" id="searchInput" class="search-input" placeholder="Search characters..." autocomplete="off">
             <div class="search-status" id="searchStatus"></div>
         </div>
-        <div class="view-toggle" id="viewToggle" role="group" aria-label="View mode">
-            <button class="view-toggle-btn active" data-view="grouped" type="button">Grouped</button>
-            <button class="view-toggle-btn" data-view="loose" type="button">Loose</button>
+        <div class="toggle-bar">
+            <div class="view-toggle" id="viewToggle" role="group" aria-label="Layout mode">
+                <button class="view-toggle-btn active" data-view="grouped" type="button" title="Grouped by account">
+                    <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="8" height="8" rx="1.5"/><rect x="11" y="1" width="8" height="8" rx="1.5"/><rect x="1" y="11" width="8" height="8" rx="1.5"/><rect x="11" y="11" width="8" height="8" rx="1.5"/></svg>
+                </button>
+                <button class="view-toggle-btn" data-view="loose" type="button" title="Loose list">
+                    <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="2" width="18" height="3" rx="1.5"/><rect x="1" y="8.5" width="18" height="3" rx="1.5"/><rect x="1" y="15" width="18" height="3" rx="1.5"/></svg>
+                </button>
+            </div>
+            <div class="toggle-separator"></div>
+            <div class="view-toggle" id="densityToggle" role="group" aria-label="Card density">
+                <button class="view-toggle-btn active" data-density="cards" type="button" title="Card view">
+                    <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="5" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="5" y1="11" x2="12" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+                <button class="view-toggle-btn" data-density="slim" type="button" title="Slim view">
+                    <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="2" width="18" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="8" width="18" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="14" width="18" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+                </button>
+            </div>
         </div>
         <div class="refresh-indicator">
             <span id="refreshTimer">Refreshing in 60s</span>
@@ -68,7 +79,7 @@
     let activeRoles = new Set();
     let searchTerm = '';
     let currentView = localStorage.getItem('dashboardView') || 'grouped';
-    let activeAccountFilter = 'all';  // 'all' | 'unassigned' | <accountId as string>
+    let currentDensity = localStorage.getItem('dashboardDensity') || 'cards';
     let cachedCharacters = [];
 
     // ---- Relative time helper ----
@@ -104,61 +115,78 @@
             .catch(error => console.error('Error fetching locations:', error));
     }
 
-    function renderCardHTML(char) {
+    function renderSlimCardHTML(char) {
         return `
-            <div class="character-card"
+            <div class="character-slim-chip"
                  data-online="${char.online}"
-                 data-roles="${char.roles.join(',')}"
+                 data-roles="${char.roles.map(r => r.name).join(',')}"
                  data-name="${char.name}"
                  data-system="${char.system}"
                  data-ship="${char.ship}"
                  data-account-id="${char.account_id ?? ''}"
                  data-account-name="${char.account_name ?? ''}">
-                <div class="card-header">
-                    <div class="character-portrait">
-                        <img src="${char.portrait_url}" alt="${char.name}" class="portrait-img">
-                        ${char.corporation_id ? `
-                            <img src="https://images.evetech.net/corporations/${char.corporation_id}/logo?size=32"
-                                 alt="Corp" class="corp-logo">
-                        ` : ''}
-                        <div class="status-indicator ${char.online ? 'online' : 'offline'}"></div>
-                    </div>
+                <div class="slim-portrait">
+                    <img src="${char.portrait_url}" alt="${char.name}" class="small-portrait">
+                    <div class="status-indicator slim-status ${char.online ? 'online' : 'offline'}"></div>
+                </div>
+                <span class="slim-name">${char.name}</span>
+                <span class="slim-sep">·</span>
+                <a href="https://evemaps.dotlan.net/system/${char.system}"
+                   target="_blank" class="system-link slim-system">${char.system}</a>
+            </div>
+        `;
+    }
+
+    function renderCardHTML(char) {
+        // Left border: first role's color
+        const borderStyle = char.roles.length
+            ? `border-left: 4px solid ${char.roles[0].color || '#607D8B'}`
+            : '';
+
+        return `
+            <div class="character-card"
+                 style="${borderStyle}"
+                 data-online="${char.online}"
+                 data-roles="${char.roles.map(r => r.name).join(',')}"
+                 data-name="${char.name}"
+                 data-system="${char.system}"
+                 data-ship="${char.ship}"
+                 data-account-id="${char.account_id ?? ''}"
+                 data-account-name="${char.account_name ?? ''}">
+                <div class="character-portrait">
+                    <img src="${char.portrait_url}" alt="${char.name}" class="portrait-img">
+                    ${char.corporation_id ? `
+                        <img src="https://images.evetech.net/corporations/${char.corporation_id}/logo?size=32"
+                             alt="Corp" class="corp-logo">
+                    ` : ''}
+                    <div class="status-indicator ${char.online ? 'online' : 'offline'}"></div>
+                </div>
+                <div class="card-body">
                     <h3 class="character-name">${char.name}</h3>
+                    <div class="card-details">
+                        <div class="card-detail">
+                            <span class="detail-label">Location</span>
+                            <a href="https://evemaps.dotlan.net/system/${char.system}"
+                               target="_blank" class="system-link">${char.system}</a>
+                        </div>
+                        <div class="card-detail">
+                            <span class="detail-label">Ship</span>
+                            <span>${char.ship}</span>
+                        </div>
+                    </div>
+                    ${char.last_updated ? `
+                        <div class="card-timestamp" data-updated="${char.last_updated}">
+                            Updated ${relativeTime(char.last_updated)}
+                        </div>
+                    ` : ''}
                 </div>
-                <div class="card-details">
-                    <div class="card-detail">
-                        <span class="detail-label">Location</span>
-                        <a href="https://evemaps.dotlan.net/system/${char.system}"
-                           target="_blank" class="system-link">${char.system}</a>
-                    </div>
-                    <div class="card-detail">
-                        <span class="detail-label">Ship</span>
-                        <span>${char.ship}</span>
-                    </div>
-                </div>
-                ${char.roles.length ? `
-                    <div class="card-roles">
-                        ${char.roles.map(r => `<span class="role-chip">${r}</span>`).join('')}
-                    </div>
-                ` : ''}
-                ${char.account_name ? `
-                    <div class="card-account">
-                        📛 ${char.account_name}${char.account_subscription === 'omega' ? ' · Ω'
-                                                  : char.account_subscription === 'alpha' ? ' · α' : ''}
-                    </div>
-                ` : ''}
-                ${char.last_updated ? `
-                    <div class="card-timestamp" data-updated="${char.last_updated}">
-                        Updated ${relativeTime(char.last_updated)}
-                    </div>
-                ` : ''}
             </div>
         `;
     }
 
     function subBadgeHTML(sub) {
-        if (sub === 'omega') return '<span class="sub-badge omega">Omega</span>';
-        if (sub === 'alpha') return '<span class="sub-badge alpha">Alpha</span>';
+        if (sub === 'omega') return '<span class="sub-badge omega">&#937;</span>';
+        if (sub === 'alpha') return '<span class="sub-badge alpha">&#913;</span>';
         return '';
     }
 
@@ -186,6 +214,9 @@
 
     function renderGrouped(characters) {
         const groups = groupByAccount(characters);
+        const isSlim = currentDensity === 'slim';
+        const renderer = isSlim ? renderSlimCardHTML : renderCardHTML;
+        const gridClass = isSlim ? 'slim-chip-grid slim-chip-grid--grouped' : 'character-grid';
         return groups.map(g => {
             const collapsedKey = `groupCollapsed:${g.key}`;
             const isCollapsed = localStorage.getItem(collapsedKey) === '1';
@@ -197,8 +228,8 @@
                         ${subBadgeHTML(g.subscription)}
                         <span class="group-count">· ${g.chars.length} char${g.chars.length === 1 ? '' : 's'}</span>
                     </div>
-                    <div class="character-grid">
-                        ${g.chars.map(renderCardHTML).join('')}
+                    <div class="${gridClass}">
+                        ${g.chars.map(renderer).join('')}
                     </div>
                 </div>
             `;
@@ -206,30 +237,10 @@
     }
 
     function renderLoose(characters) {
-        return `<div class="character-grid">${characters.map(renderCardHTML).join('')}</div>`;
-    }
-
-    function rebuildAccountFilterChips(characters) {
-        const seen = new Map();
-        for (const c of characters) {
-            if (c.account_id && !seen.has(c.account_id)) {
-                seen.set(c.account_id, c.account_name);
-            }
-        }
-        const container = document.getElementById('accountFilters');
-        if (!container) return;
-        const fixed = container.querySelectorAll('[data-account-filter="all"], [data-account-filter="unassigned"]');
-        container.innerHTML = '';
-        fixed.forEach(b => container.appendChild(b));
-        for (const [id, name] of seen) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'account-chip filter-chip';
-            btn.dataset.accountFilter = String(id);
-            btn.textContent = name;
-            if (String(id) === activeAccountFilter) btn.classList.add('active');
-            container.appendChild(btn);
-        }
+        const isSlim = currentDensity === 'slim';
+        const renderer = isSlim ? renderSlimCardHTML : renderCardHTML;
+        const gridClass = isSlim ? 'slim-chip-grid slim-chip-grid--loose' : 'character-grid';
+        return `<div class="${gridClass}">${characters.map(renderer).join('')}</div>`;
     }
 
     function updateCharacterDisplay(characters) {
@@ -250,7 +261,6 @@
             return;
         }
 
-        rebuildAccountFilterChips(characters);
         container.innerHTML = currentView === 'grouped' ? renderGrouped(characters) : renderLoose(characters);
         applyFilters();
     }
@@ -269,23 +279,17 @@
 
     // ---- Unified filtering (roles + account + search, AND logic) ----
     function applyFilters() {
-        const cards = document.querySelectorAll('.character-card');
+        const cards = document.querySelectorAll('.character-card, .character-slim-chip');
         const term = searchTerm.toLowerCase();
         let visible = 0;
         const total = cards.length;
-        const isFiltering = term || activeRoles.size > 0 || activeAccountFilter !== 'all';
+        const isFiltering = term || activeRoles.size > 0;
 
         cards.forEach(card => {
             let roleMatch = true;
             if (activeRoles.size > 0) {
                 const cardRoles = card.dataset.roles.split(',').filter(r => r);
                 roleMatch = cardRoles.some(r => activeRoles.has(r));
-            }
-            let accountMatch = true;
-            if (activeAccountFilter === 'unassigned') {
-                accountMatch = !card.dataset.accountId;
-            } else if (activeAccountFilter !== 'all') {
-                accountMatch = card.dataset.accountId === activeAccountFilter;
             }
             let searchMatch = true;
             if (term) {
@@ -297,14 +301,14 @@
                 searchMatch = name.includes(term) || system.includes(term) || ship.includes(term)
                            || roles.includes(term) || account.includes(term);
             }
-            const show = roleMatch && accountMatch && searchMatch;
+            const show = roleMatch && searchMatch;
             card.style.display = show ? '' : 'none';
             if (show) visible++;
         });
 
         // In grouped view, hide empty groups
         document.querySelectorAll('.account-group').forEach(group => {
-            const anyVisible = [...group.querySelectorAll('.character-card')]
+            const anyVisible = [...group.querySelectorAll('.character-card, .character-slim-chip')]
                 .some(c => c.style.display !== 'none');
             group.style.display = anyVisible ? '' : 'none';
         });
@@ -371,24 +375,25 @@
     // View toggle
     document.getElementById('viewToggle')?.addEventListener('click', (e) => {
         const btn = e.target.closest('.view-toggle-btn');
-        if (!btn) return;
+        if (!btn || !btn.dataset.view) return;
         currentView = btn.dataset.view;
         localStorage.setItem('dashboardView', currentView);
-        document.querySelectorAll('.view-toggle-btn').forEach(b => {
+        document.querySelectorAll('#viewToggle .view-toggle-btn').forEach(b => {
             b.classList.toggle('active', b.dataset.view === currentView);
         });
         if (cachedCharacters.length) updateCharacterDisplay(cachedCharacters);
     });
 
-    // Account filter chips
-    document.getElementById('accountFilters')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('.account-chip');
-        if (!btn) return;
-        activeAccountFilter = btn.dataset.accountFilter;
-        document.querySelectorAll('#accountFilters .account-chip').forEach(b => {
-            b.classList.toggle('active', b.dataset.accountFilter === activeAccountFilter);
+    // Density toggle
+    document.getElementById('densityToggle')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.view-toggle-btn');
+        if (!btn || !btn.dataset.density) return;
+        currentDensity = btn.dataset.density;
+        localStorage.setItem('dashboardDensity', currentDensity);
+        document.querySelectorAll('#densityToggle .view-toggle-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.density === currentDensity);
         });
-        applyFilters();
+        if (cachedCharacters.length) updateCharacterDisplay(cachedCharacters);
     });
 
     // Group header collapse
@@ -403,8 +408,11 @@
     });
 
     // Sync initial toggle button state
-    document.querySelectorAll('.view-toggle-btn').forEach(b => {
+    document.querySelectorAll('#viewToggle .view-toggle-btn').forEach(b => {
         b.classList.toggle('active', b.dataset.view === currentView);
+    });
+    document.querySelectorAll('#densityToggle .view-toggle-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.density === currentDensity);
     });
 
     // Trigger an immediate fetch so the initial render uses the chosen view

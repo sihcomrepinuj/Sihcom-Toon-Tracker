@@ -1,3 +1,4 @@
+import math
 import sqlite3
 from config import Config
 from models import get_session, Character, CharacterSkill
@@ -10,11 +11,20 @@ class SkillChecker:
         self.sde_conn = None
         self.type_name_cache = {}
         self.skill_cache = {}
+        self.rank_cache = {}  # skill_id -> rank multiplier
 
     def connect_sde(self):
-        """Connect to the SDE SQLite database."""
+        """Connect to the SDE SQLite database.
+
+        Uses check_same_thread=False because Flask's dev server is threaded
+        and the skill_checker is a global singleton — requests from different
+        threads need to share the read-only SDE connection.
+        """
         if self.sde_conn is None:
-            self.sde_conn = sqlite3.connect(Config.SDE_DATABASE_PATH)
+            self.sde_conn = sqlite3.connect(
+                Config.SDE_DATABASE_PATH,
+                check_same_thread=False,
+            )
         return self.sde_conn
 
     def get_type_id(self, type_name):
@@ -224,6 +234,140 @@ class SkillChecker:
         # Sort: fully qualified first, then partially trained, then missing most
         results.sort(key=lambda x: (-x['can_fly'], -x['met_skills']))
 
+        return results
+
+    def get_skill_rank(self, skill_id):
+        """Get the rank (skillTimeConstant) for a skill from SDE.
+
+        attributeID 275 = skillTimeConstant (the rank multiplier).
+        """
+        if skill_id in self.rank_cache:
+            return self.rank_cache[skill_id]
+
+        conn = self.connect_sde()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT valueInt, valueFloat FROM dgmTypeAttributes "
+            "WHERE typeID = ? AND attributeID = 275",
+            (skill_id,)
+        )
+        result = cursor.fetchone()
+
+        rank = 1  # default fallback
+        if result:
+            rank = int(result[0] or result[1] or 1)
+
+        self.rank_cache[skill_id] = rank
+        return rank
+
+    @staticmethod
+    def sp_for_level(rank, level):
+        """Calculate total SP needed for a skill at a given level.
+
+        Formula: SP = 250 * rank * 2^(2.5 * (level - 1))
+        Level 0 returns 0.
+        """
+        if level <= 0:
+            return 0
+        return int(math.ceil(250 * rank * (2 ** (2.5 * (level - 1)))))
+
+    def calc_missing_sp(self, fit_requirements, character_skills):
+        """Calculate total missing SP for a character given fit requirements.
+
+        Args:
+            fit_requirements: dict from get_fit_requirements()
+            character_skills: dict of {skill_id: trained_level}
+
+        Returns:
+            int: total SP gap
+        """
+        total_gap = 0
+        for skill_id, req in fit_requirements.items():
+            required_level = req['level']
+            current_level = character_skills.get(skill_id, 0)
+            if current_level < required_level:
+                rank = self.get_skill_rank(skill_id)
+                sp_needed = self.sp_for_level(rank, required_level)
+                sp_have = self.sp_for_level(rank, current_level)
+                total_gap += sp_needed - sp_have
+        return total_gap
+
+    @staticmethod
+    def sp_per_injector(total_sp):
+        """SP gained per skill injector based on character's total SP.
+
+        Diminishing returns tiers:
+        - Under 5M SP:   500,000 SP per injector
+        - 5M - 50M SP:   400,000 SP per injector
+        - 50M - 80M SP:  300,000 SP per injector
+        - Over 80M SP:   150,000 SP per injector
+        """
+        if total_sp is None or total_sp < 5_000_000:
+            return 500_000
+        elif total_sp < 50_000_000:
+            return 400_000
+        elif total_sp < 80_000_000:
+            return 300_000
+        else:
+            return 150_000
+
+    @staticmethod
+    def injectors_needed(missing_sp, sp_per_inj):
+        """Calculate number of injectors to cover a SP gap."""
+        if missing_sp <= 0:
+            return 0
+        return math.ceil(missing_sp / sp_per_inj)
+
+    def check_all_characters_with_injectors(self, fit_requirements):
+        """Check all characters and include injector data.
+
+        Returns the same structure as check_all_characters but with
+        additional 'missing_sp' and 'injectors_needed' fields per character.
+        """
+        session = get_session()
+        characters = session.query(Character).all()
+
+        results = []
+
+        for character in characters:
+            character_skills = {s.skill_id: s.skill_level for s in character.skills}
+
+            # Standard fit check
+            missing_skills = []
+            met_count = 0
+            for skill_id, req in fit_requirements.items():
+                current_level = character_skills.get(skill_id, 0)
+                if current_level >= req['level']:
+                    met_count += 1
+                else:
+                    missing_skills.append({
+                        'skill_name': req['skill_name'],
+                        'required_level': req['level'],
+                        'current_level': current_level
+                    })
+
+            can_fly = len(missing_skills) == 0
+
+            # Injector math
+            missing_sp = self.calc_missing_sp(fit_requirements, character_skills)
+            sp_per_inj = self.sp_per_injector(character.total_sp)
+            inj_needed = self.injectors_needed(missing_sp, sp_per_inj)
+
+            results.append({
+                'character_id': character.id,
+                'character_name': character.name,
+                'can_fly': can_fly,
+                'total_skills': len(fit_requirements),
+                'met_skills': met_count,
+                'missing_skills': missing_skills,
+                'missing_sp': missing_sp,
+                'injectors_needed': inj_needed,
+            })
+
+        session.close()
+
+        # Can-fly characters first, then sort by fewest injectors needed
+        results.sort(key=lambda x: (-x['can_fly'], x['injectors_needed'], -x['met_skills']))
         return results
 
     def close(self):

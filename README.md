@@ -23,8 +23,8 @@ Paste any EFT format fit to see which characters can fly it, with detailed skill
 ## Prerequisites
 
 - Python 3.8 or higher
+- Git (used to fetch the SDE converter submodule)
 - EVE Online developer application credentials
-- EVE Online SDE (Static Data Export) SQLite database
 
 ## Installation
 
@@ -66,19 +66,31 @@ FLASK_SECRET_KEY=your_random_secret_key_here
 EVE_CALLBACK_URL=http://localhost:5000/callback
 ```
 
-### 5. Download SDE Database
+### 5. Build the SDE Database
 
-You need the EVE Online Static Data Export (SDE) for skill checking:
+The fit checker and route finder need the EVE Online Static Data Export (SDE).
+This project builds it from **CCP's official YAML SDE** (the authoritative source
+at `developers.eveonline.com`), converting it to SQLite locally with the
+[`eve-sde-converter`](https://github.com/noirsoldats/eve-sde-converter) git
+submodule. Run:
 
-1. Download the latest SDE from [Fuzzwork's SDE conversions](https://www.fuzzwork.co.uk/dump/latest/)
-2. Extract the SQLite database
-3. Place it in the project root as `sde.sqlite`
+```bash
+python setup_sde.py
+```
 
-**Required tables in the SDE:**
-- `invTypes` - Item type names and IDs
-- `dgmTypeAttributes` - Skill requirements for items
+This will (re)build `data/sqlite-latest.sqlite`. It downloads ~200 MB and the
+conversion takes a few minutes and ~2 GB of RAM. Re-run it after major EVE
+patches to pick up new ships, modules, and systems.
 
-Alternatively, you can create a minimal SDE with just these tables from the full SDE dump.
+If you cloned the repo without `--recurse-submodules`, `setup_sde.py`
+bootstraps the converter source automatically (via the submodule, or a pinned
+GitHub tarball fallback if git isn't available).
+
+**Tables used by the app:**
+- `invTypes` — item type names and IDs
+- `dgmTypeAttributes` — skill requirements and skill ranks
+- `mapSolarSystems` — solar system names/IDs (route finder)
+- `mapSolarSystemJumps` — stargate adjacency graph (route finder)
 
 ## Usage
 
@@ -134,9 +146,13 @@ eve-tracker/
 ├── poller.py               # Background ESI polling
 ├── skill_checker.py        # Fit skill validation
 ├── requirements.txt        # Python dependencies
+├── setup_sde.py            # Builds the SDE from CCP's YAML export
 ├── .env                    # Configuration (not in git)
 ├── .env.example            # Configuration template
-├── sde.sqlite              # EVE SDE database (not in git)
+├── data/
+│   └── sqlite-latest.sqlite # EVE SDE database, built by setup_sde.py (not in git)
+├── tools/
+│   └── eve-sde-converter/  # CCP YAML -> SQLite converter (git submodule)
 ├── tracker.db              # App database (auto-generated)
 ├── static/
 │   └── style.css           # Styles
@@ -176,9 +192,9 @@ eve-tracker/
 
 Make sure you've created a `.env` file with your EVE application credentials.
 
-### "Could not determine skill requirements"
+### "Could not determine skill requirements" / "SDE database not found"
 
-Ensure the `sde.sqlite` file is present and contains the required tables (`invTypes` and `dgmTypeAttributes`).
+Ensure you've run `python setup_sde.py` to build `data/sqlite-latest.sqlite`. Re-run it after major EVE patches to refresh the data.
 
 ### Characters not updating
 
@@ -236,7 +252,7 @@ This is a personal project, but feel free to fork and modify for your own use.
 
 - Built for EVE Online
 - Uses [Preston](https://github.com/Celeo/preston) for OAuth
-- SDE data from [Fuzzwork](https://www.fuzzwork.co.uk/)
+- SDE sourced from CCP's official [static data export](https://developers.eveonline.com/), converted with [eve-sde-converter](https://github.com/noirsoldats/eve-sde-converter)
 - Character portraits from EVE Image Server
 - Map links to [DOTLAN EveMaps](https://evemaps.dotlan.net/)
 

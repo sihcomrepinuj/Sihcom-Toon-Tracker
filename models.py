@@ -5,6 +5,20 @@ from config import Config
 
 Base = declarative_base()
 
+# Preset color palette for role tags
+ROLE_PALETTE = [
+    '#5865F2',  # blue
+    '#ED4245',  # red
+    '#3BA55C',  # green
+    '#FAA61A',  # amber
+    '#9B59B6',  # purple
+    '#E91E8C',  # pink
+    '#1ABC9C',  # teal
+    '#E67E22',  # orange
+    '#607D8B',  # blue-grey
+    '#3498DB',  # sky
+]
+
 # Many-to-many association table for characters and roles
 character_roles = Table(
     'character_roles',
@@ -23,13 +37,14 @@ class Character(Base):
     access_token = Column(String)
     token_expiry = Column(DateTime)
     corporation_id = Column(Integer, nullable=True)
+    total_sp = Column(Integer, nullable=True)
     added_at = Column(DateTime, default=datetime.utcnow)
     account_id = Column(Integer, ForeignKey('accounts.id', ondelete='SET NULL'), nullable=True)
 
     # Relationships
     roles = relationship('Role', secondary=character_roles, back_populates='characters')
-    location = relationship('LocationCache', back_populates='character', uselist=False)
-    skills = relationship('CharacterSkill', back_populates='character')
+    location = relationship('LocationCache', back_populates='character', uselist=False, cascade='all, delete-orphan')
+    skills = relationship('CharacterSkill', back_populates='character', cascade='all, delete-orphan')
     account = relationship('Account', back_populates='characters')
 
     def __repr__(self):
@@ -41,6 +56,7 @@ class Role(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False, unique=True)
+    color = Column(String, nullable=True)  # hex color like '#5865F2'
 
     # Relationships
     characters = relationship('Character', secondary=character_roles, back_populates='roles')
@@ -138,6 +154,8 @@ def init_db():
     engine = create_engine(f'sqlite:///{Config.DATABASE_PATH}')
     Base.metadata.create_all(engine)
     _migrate_add_account_id(engine)
+    _migrate_add_total_sp(engine)
+    _migrate_add_role_color(engine)
     return engine
 
 
@@ -152,6 +170,45 @@ def _migrate_add_account_id(engine):
                 "ALTER TABLE characters ADD COLUMN account_id INTEGER "
                 "REFERENCES accounts(id) ON DELETE SET NULL"
             ))
+            conn.commit()
+
+
+def _migrate_add_total_sp(engine):
+    """Add characters.total_sp if missing (idempotent)."""
+    with engine.connect() as conn:
+        from sqlalchemy import text
+        result = conn.execute(text("PRAGMA table_info(characters)")).fetchall()
+        cols = [row[1] for row in result]
+        if 'total_sp' not in cols:
+            conn.execute(text(
+                "ALTER TABLE characters ADD COLUMN total_sp INTEGER"
+            ))
+            conn.commit()
+
+
+def _migrate_add_role_color(engine):
+    """Add roles.color if missing (idempotent), and backfill NULL colors."""
+    with engine.connect() as conn:
+        from sqlalchemy import text
+        result = conn.execute(text("PRAGMA table_info(roles)")).fetchall()
+        cols = [row[1] for row in result]
+        if 'color' not in cols:
+            conn.execute(text(
+                "ALTER TABLE roles ADD COLUMN color VARCHAR"
+            ))
+            conn.commit()
+
+        # Backfill any roles that don't have a color yet
+        null_roles = conn.execute(
+            text("SELECT id FROM roles WHERE color IS NULL ORDER BY id")
+        ).fetchall()
+        if null_roles:
+            for i, row in enumerate(null_roles):
+                color = ROLE_PALETTE[i % len(ROLE_PALETTE)]
+                conn.execute(
+                    text("UPDATE roles SET color = :color WHERE id = :id"),
+                    {'color': color, 'id': row[0]},
+                )
             conn.commit()
 
 

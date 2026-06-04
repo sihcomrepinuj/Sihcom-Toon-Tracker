@@ -224,6 +224,11 @@ class ESIPoller:
                 logger.error(f"Error fetching skills for {character.name}")
                 return
 
+            # Store total SP on the character record
+            total_sp = skills_data.get('total_sp')
+            if total_sp is not None:
+                character.total_sp = total_sp
+
             # Delete existing skills
             db_session.query(CharacterSkill).filter_by(character_id=character.id).delete()
 
@@ -238,7 +243,7 @@ class ESIPoller:
                 db_session.add(character_skill)
 
             db_session.commit()
-            logger.info(f"Updated {len(skills_data.get('skills', []))} skills for {character.name}")
+            logger.info(f"Updated {len(skills_data.get('skills', []))} skills for {character.name} (total SP: {total_sp})")
 
         except Exception as e:
             logger.error(f"Error polling skills for {character.name}: {e}", exc_info=True)
