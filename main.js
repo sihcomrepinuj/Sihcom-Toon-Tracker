@@ -1,190 +1,40 @@
 const { app, BrowserWindow, shell, dialog } = require('electron');
-const { spawn, execSync } = require('child_process');
 const http = require('http');
 const path = require('path');
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const FLASK_PORT = 5000;
-const FLASK_URL = `http://localhost:${FLASK_PORT}`;
+const SERVICE_PORT = 5000;
+const SERVICE_URL = `http://127.0.0.1:${SERVICE_PORT}`;
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 let mainWindow = null;
-let flaskProcess = null;
 let oauthPollInterval = null;
 
 // ---------------------------------------------------------------------------
-// Flask process management
+// Service probe
 // ---------------------------------------------------------------------------
 
 /**
- * Find a working Python command on this system.
- * Tries common commands first, then checks well-known Windows install paths.
+ * Try once to reach the background service health endpoint.
+ * Resolves true if reachable within 2 seconds, false otherwise.
  */
-function findPython() {
-  const fs = require('fs');
+function probeService() {
+  return new Promise((resolve) => {
+    const req = http.get(`${SERVICE_URL}/api/health`, (res) => {
+      res.resume();
+      resolve(res.statusCode === 200);
+    });
 
-  // Try commands that might be on PATH
-  for (const cmd of ['python', 'python3', 'py']) {
-    try {
-      execSync(`"${cmd}" --version`, { stdio: 'pipe' });
-      return cmd;
-    } catch {
-      continue;
-    }
-  }
+    req.on('error', () => resolve(false));
 
-  // Check common Windows install locations
-  const winPaths = [];
-  const localProgs = process.env.LOCALAPPDATA
-    ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Python')
-    : null;
-
-  // Scan C:\PythonXXX
-  try {
-    const cDriveEntries = fs.readdirSync('C:\\').filter(d => d.match(/^Python\d/i));
-    for (const dir of cDriveEntries) {
-      winPaths.push(path.join('C:\\', dir, 'python.exe'));
-    }
-  } catch {}
-
-  // Scan AppData\Local\Programs\Python
-  if (localProgs) {
-    try {
-      const entries = fs.readdirSync(localProgs).filter(d => d.match(/^Python\d/i));
-      for (const dir of entries) {
-        winPaths.push(path.join(localProgs, dir, 'python.exe'));
-      }
-    } catch {}
-  }
-
-  // Scan Program Files
-  for (const pf of ['C:\\Program Files', 'C:\\Program Files (x86)']) {
-    try {
-      const entries = fs.readdirSync(pf).filter(d => d.match(/^Python\d/i));
-      for (const dir of entries) {
-        winPaths.push(path.join(pf, dir, 'python.exe'));
-      }
-    } catch {}
-  }
-
-  // Return the first one that exists
-  for (const p of winPaths) {
-    if (fs.existsSync(p)) {
-      return p;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Spawn the Flask server as a child process.
- */
-function startFlask() {
-  const pythonCmd = findPython();
-  if (!pythonCmd) {
-    dialog.showErrorBox(
-      'Python Not Found',
-      'Could not find Python on your system. Please install Python 3 and make sure it is on your PATH.'
-    );
-    app.quit();
-    return;
-  }
-
-  // __dirname points to the app files in both dev and packaged mode (with asar: false).
-  const appDir = __dirname;
-  const appPy = path.join(appDir, 'app.py');
-
-  console.log(`Starting Flask: ${pythonCmd} "${appPy}" --electron (cwd: ${appDir})`);
-
-  flaskProcess = spawn(pythonCmd, [appPy, '--electron'], {
-    cwd: appDir,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-
-  flaskProcess.on('error', (err) => {
-    console.error(`Failed to spawn Flask: ${err.message}`);
-    dialog.showErrorBox(
-      'Python Error',
-      `Could not start Python.\n\nCommand: ${pythonCmd}\nError: ${err.message}\n\nMake sure Python 3 is installed.`
-    );
-    flaskProcess = null;
-  });
-
-  flaskProcess.stdout.on('data', (data) => {
-    console.log(`[Flask] ${data.toString().trim()}`);
-  });
-
-  flaskProcess.stderr.on('data', (data) => {
-    console.error(`[Flask] ${data.toString().trim()}`);
-  });
-
-  flaskProcess.on('close', (code) => {
-    console.log(`Flask process exited with code ${code}`);
-    flaskProcess = null;
-  });
-}
-
-/**
- * Kill the Flask child process (and its entire process tree on Windows).
- */
-function killFlask() {
-  if (!flaskProcess) return;
-
-  try {
-    if (process.platform === 'win32') {
-      // On Windows, process.kill() doesn't reliably kill child trees.
-      spawn('taskkill', ['/pid', String(flaskProcess.pid), '/f', '/t']);
-    } else {
-      flaskProcess.kill('SIGTERM');
-    }
-  } catch (err) {
-    console.error('Error killing Flask process:', err);
-  }
-
-  flaskProcess = null;
-}
-
-/**
- * Poll Flask until it responds to an HTTP request.
- * Resolves when Flask is ready, rejects after timeout.
- */
-function waitForFlask(maxAttempts = 50, interval = 200) {
-  return new Promise((resolve, reject) => {
-    let attempts = 0;
-
-    const check = () => {
-      attempts++;
-
-      const req = http.get(FLASK_URL, (res) => {
-        // Any response means Flask is up
-        res.resume(); // drain the response
-        resolve();
-      });
-
-      req.on('error', () => {
-        if (attempts >= maxAttempts) {
-          reject(new Error(`Flask did not start after ${maxAttempts} attempts`));
-        } else {
-          setTimeout(check, interval);
-        }
-      });
-
-      req.setTimeout(1000, () => {
-        req.destroy();
-        if (attempts >= maxAttempts) {
-          reject(new Error(`Flask did not start after ${maxAttempts} attempts`));
-        } else {
-          setTimeout(check, interval);
-        }
-      });
-    };
-
-    check();
+    req.setTimeout(2000, () => {
+      req.destroy();
+      resolve(false);
+    });
   });
 }
 
@@ -204,36 +54,38 @@ function createWindow() {
     },
   });
 
-  // Show the loading page first, then switch to Flask once ready
-  mainWindow.loadFile('loading.html');
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 
   // ---- External link handling ----
 
-  // Intercept in-page navigation (clicking links without target="_blank")
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    // Allow navigation within our Flask app
+  function isServiceUrl(url) {
     try {
       const parsed = new URL(url);
-      if (parsed.hostname === 'localhost' && parsed.port === String(FLASK_PORT)) {
-        return;
-      }
+      return (
+        (parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost') &&
+        parsed.port === String(SERVICE_PORT)
+      );
     } catch {
-      return;
+      return false;
     }
+  }
 
-    // Everything else opens in the system browser
+  function handleExternalUrl(event, url) {
+    if (isServiceUrl(url)) return;
     event.preventDefault();
     shell.openExternal(url);
-
-    // If this was an EVE SSO login, start polling for the OAuth callback
     if (url.includes('login.eveonline.com')) {
       startOAuthPolling();
     }
-  });
+  }
+
+  // Intercept client-side navigations (e.g. clicking <a href="...">)
+  mainWindow.webContents.on('will-navigate', handleExternalUrl);
+
+  // Intercept server-side redirects (e.g. Flask's 302 → login.eveonline.com)
+  mainWindow.webContents.on('will-redirect', handleExternalUrl);
 
   // Intercept window.open() / target="_blank" links
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -247,7 +99,7 @@ function createWindow() {
 // ---------------------------------------------------------------------------
 
 /**
- * After the user is sent to EVE SSO in the system browser, we poll
+ * After the user is sent to EVE SSO in the system browser, poll
  * /api/locations to detect when a new character has been added.
  * Once detected, navigate the Electron window to /settings.
  */
@@ -266,7 +118,7 @@ function startOAuthPolling() {
       if (lastCharacterCount !== null && count > lastCharacterCount) {
         // A new character was added — navigate to settings
         if (mainWindow) {
-          mainWindow.loadURL(`${FLASK_URL}/settings`);
+          mainWindow.loadURL(`${SERVICE_URL}/settings`);
         }
         clearInterval(oauthPollInterval);
         oauthPollInterval = null;
@@ -285,7 +137,7 @@ function startOAuthPolling() {
 
 function fetchCharacterCount(callback) {
   http
-    .get(`${FLASK_URL}/api/locations`, (res) => {
+    .get(`${SERVICE_URL}/api/locations`, (res) => {
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
@@ -304,37 +156,19 @@ function fetchCharacterCount(callback) {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
-  startFlask();
   createWindow();
+  mainWindow.loadFile('loading.html');
 
-  try {
-    await waitForFlask();
-    // Flask is up — switch from loading screen to the real app
-    if (mainWindow) {
-      mainWindow.loadURL(FLASK_URL);
-    }
-  } catch (err) {
-    dialog.showErrorBox(
-      'Startup Error',
-      'Could not start the Flask server.\n\n' +
-        'Make sure Python is installed, dependencies are installed (pip install -r requirements.txt), ' +
-        'and port 5000 is not in use.\n\n' +
-        err.message
-    );
-    killFlask();
-    app.quit();
+  const serviceUp = await probeService();
+
+  if (serviceUp) {
+    mainWindow.loadURL(SERVICE_URL);
+  } else {
+    mainWindow.loadFile('service-offline.html');
   }
 });
 
 app.on('window-all-closed', () => {
-  killFlask();
+  // The background service manages its own lifecycle — do not stop it here.
   app.quit();
-});
-
-app.on('before-quit', () => {
-  killFlask();
-});
-
-process.on('exit', () => {
-  killFlask();
 });
